@@ -7,9 +7,11 @@ export * from './ui/skeleton';
 export * from './ui/separator';
 
 // Export custom components
-export * from './StatCard';
-export * from './ActivityFeed';
-
-// Export chart components
-export * from './charts/VehicleStatusChart';
-export * from './charts/FleetUtilizationChart';
+export { StatCard } from './StatCard';
+export { ActivityFeed } from './ActivityFeed';
+export { VehicleStatusChart } from './charts/VehicleStatusChart';
+export { FleetUtilizationChart } from './charts/FleetUtilizationChart';
+export { EnhancedVehicleStatusChart } from './charts/EnhancedVehicleStatusChart';
+export { EnhancedFleetUtilizationChart } from './charts/EnhancedFleetUtilizationChart';
+export { EnhancedStatCard } from './charts/EnhancedStatCard';
+export { DetailModal } from './modals/DetailModal';

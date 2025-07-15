@@ -35,6 +35,9 @@ import {
   StatCard,
   VehicleStatusChart,
   FleetUtilizationChart,
+  EnhancedVehicleStatusChart,
+  EnhancedFleetUtilizationChart,
+  EnhancedStatCard,
   ActivityFeed
 } from '@/components';
 
@@ -79,79 +82,6 @@ const COLORS = {
   info: 'hsl(221.2, 83.2%, 53.3%)',
 };
 
-interface StatCardProps {
-  title: string;
-  value: string | number;
-  icon: React.ElementType;
-  description: string;
-  trend?: {
-    value: string;
-    direction: 'up' | 'down' | 'neutral';
-    change: string;
-  };
-  color: string;
-  iconColor: string;
-  isLoading?: boolean;
-}
-
-const StatCard: React.FC<StatCardProps> = ({
-  title,
-  value,
-  icon: Icon,
-  description,
-  trend,
-  color,
-  iconColor,
-  isLoading = false
-}) => {
-  const TrendIcon = trend?.direction === 'up' ? ArrowUpRight : 
-                   trend?.direction === 'down' ? ArrowDownRight : null;
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3 }}
-    >
-      <Card className="overflow-hidden hover:shadow-md transition-shadow h-full">
-        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            {title}
-          </CardTitle>
-          <div className={`p-2 rounded-lg ${color}`}>
-            <Icon className={`h-4 w-4 ${iconColor}`} />
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="text-2xl font-bold">
-            {isLoading ? <Skeleton className="h-8 w-16" /> : value}
-          </div>
-          <p className="text-xs text-muted-foreground mt-1">{description}</p>
-          {trend && (
-            <div className="mt-2 flex items-center text-xs">
-              {TrendIcon && (
-                <TrendIcon 
-                  className={cn(
-                    "h-3.5 w-3.5 mr-1",
-                    trend.direction === 'up' ? 'text-green-500' : 'text-amber-500'
-                  )} 
-                />
-              )}
-              <span className={cn(
-                "font-medium",
-                trend.direction === 'up' ? 'text-green-600 dark:text-green-400' : 
-                trend.direction === 'down' ? 'text-amber-600 dark:text-amber-400' :
-                'text-muted-foreground'
-              )}>
-                {trend.value} {trend.change}
-              </span>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </motion.div>
-  );
-};
 
 const Dashboard = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -294,7 +224,7 @@ const Dashboard = () => {
   ].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()).slice(0, 5), 
   [vehicles.length, drivers.length, activeDrivers, maintenanceDue]);
 
-  // Prepare fleet stats for the stats grid
+  // Prepare fleet stats for the stats grid with drill-down data
   const fleetStats = useMemo(() => [
     {
       id: 'total-vehicles',
@@ -308,7 +238,22 @@ const Dashboard = () => {
         change: 'from last month'
       },
       color: 'bg-blue-100 dark:bg-blue-900/20',
-      iconColor: 'text-blue-600 dark:text-blue-400'
+      iconColor: 'text-blue-600 dark:text-blue-400',
+      drillDownData: {
+        items: vehicles.slice(0, 5).map(v => ({
+          id: v.id,
+          name: `${v.make} ${v.model}`,
+          value: v.license_plate || 'No plate',
+          status: v.status || 'unknown',
+          details: `Year: ${v.year}, Mileage: ${v.mileage || 0} km`
+        })),
+        metrics: {
+          total: totalVehicles,
+          active: vehicleStatusCounts.active,
+          inactive: vehicleStatusCounts.inactive + vehicleStatusCounts.maintenance,
+          change: { value: '+12%', direction: 'up' }
+        }
+      }
     },
     {
       id: 'active-drivers',
@@ -322,7 +267,22 @@ const Dashboard = () => {
         change: 'from last week'
       },
       color: 'bg-green-100 dark:bg-green-900/20',
-      iconColor: 'text-green-600 dark:text-green-400'
+      iconColor: 'text-green-600 dark:text-green-400',
+      drillDownData: {
+        items: drivers.filter(d => d.is_active).slice(0, 5).map(d => ({
+          id: d.id,
+          name: `${d.first_name} ${d.last_name}`,
+          value: d.phone || 'No phone',
+          status: d.is_active ? 'active' : 'inactive',
+          details: `License: ${d.license_number || 'Not provided'}`
+        })),
+        metrics: {
+          total: drivers.length,
+          active: activeDrivers,
+          inactive: drivers.length - activeDrivers,
+          change: { value: '+5%', direction: 'up' }
+        }
+      }
     },
     {
       id: 'on-route',
@@ -336,7 +296,22 @@ const Dashboard = () => {
         change: 'active routes'
       },
       color: 'bg-purple-100 dark:bg-purple-900/20',
-      iconColor: 'text-purple-600 dark:text-purple-400'
+      iconColor: 'text-purple-600 dark:text-purple-400',
+      drillDownData: {
+        items: vehicles.filter(v => v.status === 'active').slice(0, 5).map(v => ({
+          id: v.id,
+          name: `${v.make} ${v.model}`,
+          value: 'Route #' + Math.floor(Math.random() * 1000),
+          status: 'active',
+          details: 'Currently on delivery route'
+        })),
+        metrics: {
+          total: onRoute,
+          active: onRoute,
+          inactive: 0,
+          change: { value: '+3', direction: 'up' }
+        }
+      }
     },
     {
       id: 'maintenance-due',
@@ -352,12 +327,24 @@ const Dashboard = () => {
           }
         : undefined,
       color: 'bg-amber-100 dark:bg-amber-900/20',
-      iconColor: 'text-amber-600 dark:text-amber-400'
+      iconColor: 'text-amber-600 dark:text-amber-400',
+      drillDownData: {
+        items: vehicles.filter(v => v.status === 'maintenance').slice(0, 5).map(v => ({
+          id: v.id,
+          name: `${v.make} ${v.model}`,
+          value: 'Overdue',
+          status: 'maintenance',
+          details: `Last service: ${v.last_service_date || 'Unknown'}`
+        })),
+        metrics: {
+          total: maintenanceDue,
+          active: 0,
+          inactive: maintenanceDue,
+          change: { value: maintenanceDue > 0 ? '+' + maintenanceDue : '0', direction: maintenanceDue > 0 ? 'down' : 'neutral' }
+        }
+      }
     }
-  ], [totalVehicles, activeDrivers, onRoute, maintenanceDue]);
-
-  // Loading state
-  const isLoading = isLoadingVehicles || isLoadingDrivers || isLoadingStats;
+  ], [totalVehicles, activeDrivers, onRoute, maintenanceDue, vehicles, drivers, vehicleStatusCounts]);
 
   // Refresh all data
   const refreshData = useCallback(async () => {
@@ -371,63 +358,6 @@ const Dashboard = () => {
       setIsRefreshing(false);
     }
   }, [refetchVehicles, refetchDrivers]);
-    { 
-      id: 'total-vehicles',
-      title: "Total Vehicles", 
-      value: totalVehicles,
-      description: "In your fleet",
-      icon: Truck,
-      trend: {
-        value: "+2.5%",
-        direction: "up" as const,
-        change: "vs last month"
-      },
-      color: "bg-blue-100 dark:bg-blue-900/30",
-      iconColor: "text-blue-600 dark:text-blue-400"
-    },
-    { 
-      id: 'active-drivers',
-      title: "Active Drivers", 
-      value: activeDrivers,
-      description: "Currently available",
-      icon: Users,
-      trend: {
-        value: activeDrivers > 0 ? "+5.2%" : "0%",
-        direction: activeDrivers > 0 ? "up" : "neutral" as const,
-        change: "vs last month"
-      },
-      color: "bg-green-100 dark:bg-green-900/30",
-      iconColor: "text-green-600 dark:text-green-400"
-    },
-    { 
-      id: 'on-route',
-      title: "On Route", 
-      value: onRoute,
-      description: "Currently in transit",
-      icon: MapPin,
-      trend: {
-        value: onRoute > 0 ? "-1.8%" : "0%",
-        direction: onRoute > 0 ? "down" : "neutral" as const,
-        change: "vs yesterday"
-      },
-      color: "bg-purple-100 dark:bg-purple-900/30",
-      iconColor: "text-purple-600 dark:text-purple-400"
-    },
-    { 
-      id: 'maintenance-due',
-      title: "Maintenance Due", 
-      value: maintenanceDue,
-      description: "Needs attention",
-      icon: Wrench,
-      trend: {
-        value: maintenanceDue > 0 ? `+${maintenanceDue}` : "0",
-        direction: maintenanceDue > 0 ? "up" : "neutral" as const,
-        change: "due this week"
-      },
-      color: "bg-amber-100 dark:bg-amber-900/30",
-      iconColor: "text-amber-600 dark:text-amber-400"
-    },
-  ];
 
   // Loading state
   const isLoading = isLoadingVehicles || isLoadingDrivers || isLoadingStats;
@@ -487,7 +417,7 @@ const Dashboard = () => {
       {/* Stats Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {fleetStats.map((stat) => (
-          <StatCard
+          <EnhancedStatCard
             key={stat.id}
             title={stat.title}
             value={stat.value}
@@ -497,19 +427,22 @@ const Dashboard = () => {
             color={stat.color}
             iconColor={stat.iconColor}
             isLoading={isRefreshing}
+            drillDownData={stat.drillDownData}
           />
         ))}
       </div>
 
       {/* Charts Row */}
       <div className="grid gap-6 lg:grid-cols-2">
-        <VehicleStatusChart 
+        <EnhancedVehicleStatusChart 
           data={vehicleStatusData} 
-          isLoading={isRefreshing || isLoading} 
+          isLoading={isRefreshing || isLoading}
+          vehicles={vehicles}
         />
-        <FleetUtilizationChart 
+        <EnhancedFleetUtilizationChart 
           data={fleetUtilizationData}
           isLoading={isRefreshing || isLoading}
+          vehicles={vehicles}
         />
       </div>
 
@@ -613,7 +546,7 @@ const Dashboard = () => {
         
         {/* Recent Activity */}
         <ActivityFeed 
-          activities={uniqueActivities}
+          activities={recentActivities}
           isLoading={isRefreshing || isLoading}
         />
       </div>
