@@ -1,149 +1,647 @@
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Truck, Users, MapPin, Wrench, TrendingUp, AlertTriangle } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from "recharts";
+import { useState, useCallback, useMemo } from 'react';
+import { formatDistanceToNow } from 'date-fns';
+import { motion } from 'framer-motion';
+import { cn } from '@/lib/utils';
+import { 
+  Loader2, 
+  RefreshCw, 
+  Truck, 
+  Users, 
+  Wrench, 
+  MapPin, 
+  CheckCircle2, 
+  Clock, 
+  AlertTriangle, 
+  Info,
+  AlertCircle,
+  ArrowUpRight,
+  ArrowDownRight
+} from 'lucide-react';
 
-const Dashboard = () => {
-  // Mock data for demonstration
-  const fleetStats = [
-    { title: "Total Vehicles", value: "24", icon: Truck, change: "+2", trend: "up" },
-    { title: "Active Drivers", value: "18", icon: Users, change: "0", trend: "neutral" },
-    { title: "On Route", value: "12", icon: MapPin, change: "+3", trend: "up" },
-    { title: "Maintenance Due", value: "3", icon: Wrench, change: "-1", trend: "down" },
-  ];
+// Hooks
+import { useVehicles } from '@/hooks/useVehicles';
+import { useDrivers } from '@/hooks/useDrivers';
+import { useCompany } from '@/hooks/useCompany';
+import { useAuth } from '@/hooks/useAuth';
 
-  const fuelData = [
-    { month: "Jan", cost: 2400 },
-    { month: "Feb", cost: 2100 },
-    { month: "Mar", cost: 2800 },
-    { month: "Apr", cost: 2300 },
-    { month: "May", cost: 2600 },
-    { month: "Jun", cost: 2900 },
-  ];
+// Components
+import {
+  Button,
+  Card, CardContent, CardDescription, CardHeader, CardTitle,
+  Progress,
+  Tabs, TabsContent, TabsList, TabsTrigger,
+  Skeleton,
+  Separator,
+  StatCard,
+  VehicleStatusChart,
+  FleetUtilizationChart,
+  ActivityFeed
+} from '@/components';
 
-  const vehicleStatusData = [
-    { name: "Active", value: 18, color: "hsl(var(--status-active))" },
-    { name: "Maintenance", value: 3, color: "hsl(var(--status-maintenance))" },
-    { name: "Inactive", value: 3, color: "hsl(var(--status-inactive))" },
-  ];
+// Types
+type VehicleStatus = 'active' | 'maintenance' | 'inactive';
 
-  const recentAlerts = [
-    { id: 1, type: "maintenance", message: "Vehicle FL-001 scheduled maintenance due in 2 days", time: "2 hours ago" },
-    { id: 2, type: "fuel", message: "High fuel consumption detected for TR-456", time: "4 hours ago" },
-    { id: 3, type: "route", message: "Driver John Doe completed route ahead of schedule", time: "6 hours ago" },
-  ];
+type VehicleStatusCounts = {
+  [key in VehicleStatus]: number;
+};
+
+type VehicleStatusData = {
+  status: string;
+  count: number;
+}[];
+
+type FleetUtilizationData = {
+  name: string;
+  value: number;
+  color: string;
+}[];
+
+type ActivityType = 'warning' | 'success' | 'info' | 'danger';
+
+interface ActivityItem {
+  id: string;
+  type: ActivityType;
+  title: string;
+  description?: string;
+  timestamp: Date;
+  icon?: React.ReactNode;
+}
+
+// Constants
+const COLORS = {
+  active: 'hsl(142.1, 76.2%, 36.3%)',
+  maintenance: 'hsl(38, 92%, 50%)',
+  inactive: 'hsl(0, 84.2%, 60.2%)',
+  primary: 'hsl(221.2, 83.2%, 53.3%)',
+  warning: 'hsl(38, 92%, 50%)',
+  success: 'hsl(142.1, 76.2%, 36.3%)',
+  danger: 'hsl(0, 84.2%, 60.2%)',
+  info: 'hsl(221.2, 83.2%, 53.3%)',
+};
+
+interface StatCardProps {
+  title: string;
+  value: string | number;
+  icon: React.ElementType;
+  description: string;
+  trend?: {
+    value: string;
+    direction: 'up' | 'down' | 'neutral';
+    change: string;
+  };
+  color: string;
+  iconColor: string;
+  isLoading?: boolean;
+}
+
+const StatCard: React.FC<StatCardProps> = ({
+  title,
+  value,
+  icon: Icon,
+  description,
+  trend,
+  color,
+  iconColor,
+  isLoading = false
+}) => {
+  const TrendIcon = trend?.direction === 'up' ? ArrowUpRight : 
+                   trend?.direction === 'down' ? ArrowDownRight : null;
 
   return (
-    <div className="flex-1 space-y-6 p-6">
-      <div>
-        <h1 className="text-3xl font-bold">Fleet Dashboard</h1>
-        <p className="text-muted-foreground mt-1">
-          Monitor your fleet performance and operations in real-time
-        </p>
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+    >
+      <Card className="overflow-hidden hover:shadow-md transition-shadow h-full">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium text-muted-foreground">
+            {title}
+          </CardTitle>
+          <div className={`p-2 rounded-lg ${color}`}>
+            <Icon className={`h-4 w-4 ${iconColor}`} />
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold">
+            {isLoading ? <Skeleton className="h-8 w-16" /> : value}
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">{description}</p>
+          {trend && (
+            <div className="mt-2 flex items-center text-xs">
+              {TrendIcon && (
+                <TrendIcon 
+                  className={cn(
+                    "h-3.5 w-3.5 mr-1",
+                    trend.direction === 'up' ? 'text-green-500' : 'text-amber-500'
+                  )} 
+                />
+              )}
+              <span className={cn(
+                "font-medium",
+                trend.direction === 'up' ? 'text-green-600 dark:text-green-400' : 
+                trend.direction === 'down' ? 'text-amber-600 dark:text-amber-400' :
+                'text-muted-foreground'
+              )}>
+                {trend.value} {trend.change}
+              </span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+};
+
+const Dashboard = () => {
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  const { user } = useAuth();
+  
+  // Fetch data using custom hooks
+  const { 
+    vehicles = [], 
+    isLoading: isLoadingVehicles, 
+    statusCounts: vehicleStatusCounts = { active: 0, maintenance: 0, inactive: 0 },
+    refetch: refetchVehicles 
+  } = useVehicles();
+  
+  const { 
+    drivers = [], 
+    isLoading: isLoadingDrivers,
+    refetch: refetchDrivers 
+  } = useDrivers();
+  
+  const { 
+    stats: companyStats = {
+      active_vehicles: 0,
+      upcoming_maintenance: 0,
+      total_vehicles: 0,
+      total_drivers: 0,
+    }, 
+    isLoading: isLoadingStats 
+  } = useCompany();
+
+  // Calculate derived values
+  const activeDrivers = useMemo(() => drivers.filter(d => d.status === 'active').length, [drivers]);
+  const totalVehicles = vehicles.length;
+  const maintenanceDue = companyStats.upcoming_maintenance || 0;
+  const onRoute = companyStats.active_vehicles || 0;
+  const utilizationRate = vehicles.length > 0 
+    ? Math.round((companyStats.active_vehicles / vehicles.length) * 100) 
+    : 0;
+
+  // Prepare chart data
+  const vehicleStatusData: VehicleStatusData = useMemo(() => [
+    { 
+      status: 'Active',
+      count: vehicleStatusCounts.active || 0
+    },
+    { 
+      status: 'Maintenance',
+      count: vehicleStatusCounts.maintenance || 0
+    },
+    { 
+      status: 'Inactive',
+      count: vehicleStatusCounts.inactive || 0
+    }
+  ], [vehicleStatusCounts]);
+
+  const fleetUtilizationData: FleetUtilizationData = useMemo(() => [
+    { 
+      name: 'In Use', 
+      value: onRoute, 
+      color: COLORS.primary 
+    },
+    { 
+      name: 'Available', 
+      value: Math.max(0, totalVehicles - onRoute), 
+      color: COLORS.success 
+    },
+    { 
+      name: 'Maintenance', 
+      value: maintenanceDue, 
+      color: COLORS.warning 
+    }
+  ], [onRoute, totalVehicles, maintenanceDue]);
+
+  // Prepare recent activities
+  const recentActivities = useMemo<ActivityItem[]>(() => [
+    ...(maintenanceDue > 0 ? [{
+      id: 'maint-alert',
+      type: 'warning' as const,
+      title: 'Maintenance Due',
+      description: `${maintenanceDue} vehicles require maintenance`,
+      timestamp: new Date(Date.now() - 1000 * 60 * 30), // 30 minutes ago
+      icon: <Wrench className="h-4 w-4 text-amber-500" />
+    }] : []),
+    ...(vehicles.length > 0 ? [{
+      id: 'vehicles-count',
+      type: 'info' as const,
+      title: 'Fleet Update',
+      description: `${vehicles.length} vehicles in your fleet`,
+      timestamp: new Date(Date.now() - 1000 * 60 * 120), // 2 hours ago
+      icon: <Truck className="h-4 w-4 text-blue-500" />
+    }] : []),
+    ...(drivers.length > 0 ? [{
+      id: 'drivers-count',
+      type: 'success' as const,
+      title: 'Drivers',
+      description: `${activeDrivers} of ${drivers.length} drivers active`,
+      timestamp: new Date(Date.now() - 1000 * 60 * 180), // 3 hours ago
+      icon: <Users className="h-4 w-4 text-green-500" />
+    }] : []),
+    ...(vehicles.length === 0 ? [{
+      id: 'no-vehicles',
+      type: 'info' as const,
+      title: 'Get Started',
+      description: 'Add your first vehicle to begin tracking',
+      timestamp: new Date(),
+      icon: <AlertCircle className="h-4 w-4 text-blue-500" />
+    }] : []),
+    {
+      id: '1',
+      type: 'info' as const,
+      title: 'System Update',
+      description: 'Dashboard has been updated with new features',
+      timestamp: new Date(Date.now() - 1000 * 60 * 5), // 5 minutes ago
+      icon: <Info className="h-4 w-4 text-blue-500" />
+    },
+    {
+      id: '2',
+      type: 'warning' as const,
+      title: 'Maintenance Due',
+      description: `${maintenanceDue} vehicles due for maintenance`,
+      timestamp: new Date(Date.now() - 1000 * 60 * 30), // 30 minutes ago
+      icon: <AlertTriangle className="h-4 w-4 text-amber-500" />
+    },
+    {
+      id: '3',
+      type: 'success' as const,
+      title: 'New Driver Added',
+      description: 'A new driver has been added to the system',
+      timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2), // 2 hours ago
+      icon: <CheckCircle2 className="h-4 w-4 text-green-500" />
+    },
+    {
+      id: '4',
+      type: 'info' as const,
+      title: 'Scheduled Maintenance',
+      description: 'Quarterly maintenance check scheduled for next week',
+      timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24), // 1 day ago
+      icon: <Wrench className="h-4 w-4 text-blue-500" />
+    }
+  ].sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()).slice(0, 5), 
+  [vehicles.length, drivers.length, activeDrivers, maintenanceDue]);
+
+  // Prepare fleet stats for the stats grid
+  const fleetStats = useMemo(() => [
+    {
+      id: 'total-vehicles',
+      title: 'Total Vehicles',
+      value: totalVehicles,
+      description: 'In your fleet',
+      icon: Truck,
+      trend: {
+        value: '+12%',
+        direction: 'up',
+        change: 'from last month'
+      },
+      color: 'bg-blue-100 dark:bg-blue-900/20',
+      iconColor: 'text-blue-600 dark:text-blue-400'
+    },
+    {
+      id: 'active-drivers',
+      title: 'Active Drivers',
+      value: activeDrivers,
+      description: 'On the road now',
+      icon: Users,
+      trend: {
+        value: '+5%',
+        direction: 'up',
+        change: 'from last week'
+      },
+      color: 'bg-green-100 dark:bg-green-900/20',
+      iconColor: 'text-green-600 dark:text-green-400'
+    },
+    {
+      id: 'on-route',
+      title: 'On Route',
+      value: onRoute,
+      description: 'Currently in transit',
+      icon: MapPin,
+      trend: {
+        value: '+3',
+        direction: 'up',
+        change: 'active routes'
+      },
+      color: 'bg-purple-100 dark:bg-purple-900/20',
+      iconColor: 'text-purple-600 dark:text-purple-400'
+    },
+    {
+      id: 'maintenance-due',
+      title: 'Maintenance Due',
+      value: maintenanceDue,
+      description: 'Requiring attention',
+      icon: Wrench,
+      trend: maintenanceDue > 0 
+        ? {
+            value: `${maintenanceDue} due`,
+            direction: 'down',
+            change: 'needs attention'
+          }
+        : undefined,
+      color: 'bg-amber-100 dark:bg-amber-900/20',
+      iconColor: 'text-amber-600 dark:text-amber-400'
+    }
+  ], [totalVehicles, activeDrivers, onRoute, maintenanceDue]);
+
+  // Loading state
+  const isLoading = isLoadingVehicles || isLoadingDrivers || isLoadingStats;
+
+  // Refresh all data
+  const refreshData = useCallback(async () => {
+    try {
+      setIsRefreshing(true);
+      await Promise.all([refetchVehicles(), refetchDrivers()]);
+      setLastUpdated(new Date());
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [refetchVehicles, refetchDrivers]);
+    { 
+      id: 'total-vehicles',
+      title: "Total Vehicles", 
+      value: totalVehicles,
+      description: "In your fleet",
+      icon: Truck,
+      trend: {
+        value: "+2.5%",
+        direction: "up" as const,
+        change: "vs last month"
+      },
+      color: "bg-blue-100 dark:bg-blue-900/30",
+      iconColor: "text-blue-600 dark:text-blue-400"
+    },
+    { 
+      id: 'active-drivers',
+      title: "Active Drivers", 
+      value: activeDrivers,
+      description: "Currently available",
+      icon: Users,
+      trend: {
+        value: activeDrivers > 0 ? "+5.2%" : "0%",
+        direction: activeDrivers > 0 ? "up" : "neutral" as const,
+        change: "vs last month"
+      },
+      color: "bg-green-100 dark:bg-green-900/30",
+      iconColor: "text-green-600 dark:text-green-400"
+    },
+    { 
+      id: 'on-route',
+      title: "On Route", 
+      value: onRoute,
+      description: "Currently in transit",
+      icon: MapPin,
+      trend: {
+        value: onRoute > 0 ? "-1.8%" : "0%",
+        direction: onRoute > 0 ? "down" : "neutral" as const,
+        change: "vs yesterday"
+      },
+      color: "bg-purple-100 dark:bg-purple-900/30",
+      iconColor: "text-purple-600 dark:text-purple-400"
+    },
+    { 
+      id: 'maintenance-due',
+      title: "Maintenance Due", 
+      value: maintenanceDue,
+      description: "Needs attention",
+      icon: Wrench,
+      trend: {
+        value: maintenanceDue > 0 ? `+${maintenanceDue}` : "0",
+        direction: maintenanceDue > 0 ? "up" : "neutral" as const,
+        change: "due this week"
+      },
+      color: "bg-amber-100 dark:bg-amber-900/30",
+      iconColor: "text-amber-600 dark:text-amber-400"
+    },
+  ];
+
+  // Loading state
+  const isLoading = isLoadingVehicles || isLoadingDrivers || isLoadingStats;
+
+  // Show full page loading state on initial load
+  if (isLoading && !isRefreshing) {
+    return (
+      <div className="flex-1 flex items-center justify-center min-h-[calc(100vh-200px)]">
+        <div className="text-center space-y-4">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+          <p className="text-muted-foreground">Loading dashboard data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 space-y-6 p-4 md:p-6">
+      {/* Header */}
+      <div className="flex flex-col justify-between space-y-2 sm:flex-row sm:items-center sm:space-y-0">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Dashboard Overview</h1>
+          <p className="text-muted-foreground">
+            Welcome back! Here's what's happening with your fleet.
+          </p>
+        </div>
+        <div className="flex items-center space-x-3">
+          <div className="hidden sm:flex items-center text-sm text-muted-foreground">
+            <span className="hidden md:inline">Last updated</span>
+            <span className="mx-1">•</span>
+            <time dateTime={lastUpdated.toISOString()}>
+              {formatDistanceToNow(lastUpdated, { addSuffix: true })}
+            </time>
+          </div>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={refreshData}
+            disabled={isRefreshing}
+            className="shrink-0"
+          >
+            {isRefreshing ? (
+              <>
+                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                Refreshing...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                Refresh
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
-      {/* KPI Cards */}
+      {/* Stats Grid */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {fleetStats.map((stat, index) => (
-          <Card key={index} className="fleet-card">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{stat.title}</CardTitle>
-              <stat.icon className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stat.value}</div>
-              <div className="flex items-center text-xs text-muted-foreground">
-                <TrendingUp className={`mr-1 h-3 w-3 ${stat.trend === 'up' ? 'text-green-500' : stat.trend === 'down' ? 'text-red-500' : 'text-gray-500'}`} />
-                {stat.change} from last month
-              </div>
-            </CardContent>
-          </Card>
+        {fleetStats.map((stat) => (
+          <StatCard
+            key={stat.id}
+            title={stat.title}
+            value={stat.value}
+            icon={stat.icon}
+            description={stat.description}
+            trend={stat.trend}
+            color={stat.color}
+            iconColor={stat.iconColor}
+            isLoading={isRefreshing}
+          />
         ))}
       </div>
 
+      {/* Charts Row */}
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* Fuel Costs Chart */}
-        <Card className="fleet-card">
-          <CardHeader>
-            <CardTitle>Fuel Costs Trend</CardTitle>
-            <CardDescription>Monthly fuel expenses over time</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={fuelData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="month" />
-                <YAxis />
-                <Tooltip formatter={(value) => [`$${value}`, 'Fuel Cost']} />
-                <Line type="monotone" dataKey="cost" stroke="hsl(var(--primary))" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        {/* Vehicle Status Distribution */}
-        <Card className="fleet-card">
-          <CardHeader>
-            <CardTitle>Vehicle Status</CardTitle>
-            <CardDescription>Current status distribution of your fleet</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={vehicleStatusData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={100}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {vehicleStatusData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="flex justify-center gap-4 mt-4">
-              {vehicleStatusData.map((status, index) => (
-                <div key={index} className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: status.color }}></div>
-                  <span className="text-sm">{status.name}: {status.value}</span>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+        <VehicleStatusChart 
+          data={vehicleStatusData} 
+          isLoading={isRefreshing || isLoading} 
+        />
+        <FleetUtilizationChart 
+          data={fleetUtilizationData}
+          isLoading={isRefreshing || isLoading}
+        />
       </div>
 
-      {/* Recent Alerts */}
-      <Card className="fleet-card">
+      {/* Bottom Row */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Fleet Overview */}
+        <Card className="lg:col-span-2 hover:shadow-md transition-shadow">
+          <CardHeader>
+            <CardTitle>Fleet Overview</CardTitle>
+            <CardDescription>Summary of your fleet status and performance</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Tabs defaultValue="summary" className="w-full">
+              <TabsList className="grid w-full grid-cols-2 max-w-xs mb-6">
+                <TabsTrigger value="summary">Summary</TabsTrigger>
+                <TabsTrigger value="utilization">Utilization</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="summary" className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Total Vehicles</p>
+                    <p className="text-2xl font-bold">{totalVehicles}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Active</p>
+                    <p className="text-2xl font-bold">{vehicleStatusCounts.active || 0}</p>
+                  </div>
+                </div>
+                
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm text-muted-foreground">
+                    <span>Fleet Utilization</span>
+                    <span>{utilizationRate}%</span>
+                  </div>
+                  <Progress value={utilizationRate} className="h-2" />
+                </div>
+                
+                <div className="grid grid-cols-3 gap-4 pt-2">
+                  <div className="text-center">
+                    <div className="text-2xl font-bold">{vehicleStatusCounts.active || 0}</div>
+                    <div className="text-xs text-muted-foreground">Active</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold">{vehicleStatusCounts.maintenance || 0}</div>
+                    <div className="text-xs text-muted-foreground">Maintenance</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-2xl font-bold">{vehicleStatusCounts.inactive || 0}</div>
+                    <div className="text-xs text-muted-foreground">Inactive</div>
+                  </div>
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="utilization" className="space-y-4">
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm font-medium mb-1">On Route</p>
+                    <div className="flex items-center space-x-2">
+                      <div className="flex-1">
+                        <Progress value={(onRoute / (totalVehicles || 1)) * 100} className="h-2" />
+                      </div>
+                      <span className="text-sm font-medium">{onRoute}/{totalVehicles}</span>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <p className="text-sm font-medium mb-1">Available</p>
+                    <div className="flex items-center space-x-2">
+                      <div className="flex-1">
+                        <Progress 
+                          value={((totalVehicles - onRoute) / (totalVehicles || 1)) * 100} 
+                          className="h-2" 
+                        />
+                      </div>
+                      <span className="text-sm font-medium">{totalVehicles - onRoute}/{totalVehicles}</span>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <p className="text-sm font-medium mb-1">Maintenance Due</p>
+                    <div className="flex items-center space-x-2">
+                      <div className="flex-1">
+                        <div className="relative h-2 w-full overflow-hidden rounded-full bg-secondary">
+                          <div 
+                            className="h-full bg-amber-500 transition-all duration-500"
+                            style={{
+                              width: `${(maintenanceDue / (totalVehicles || 1)) * 100}%`
+                            }}
+                          />
+                        </div>
+                      </div>
+                      <span className="text-sm font-medium">{maintenanceDue}/{totalVehicles}</span>
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+        </Card>
+        
+        {/* Recent Activity */}
+        <ActivityFeed 
+          activities={uniqueActivities}
+          isLoading={isRefreshing || isLoading}
+        />
+      </div>
+      
+      {/* Quick Actions */}
+      <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5" />
-            Recent Alerts
-          </CardTitle>
-          <CardDescription>Important notifications and updates</CardDescription>
+          <CardTitle>Quick Actions</CardTitle>
+          <CardDescription>Common tasks and actions</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {recentAlerts.map((alert) => (
-              <div key={alert.id} className="flex items-start gap-3 p-3 rounded-lg bg-muted/50">
-                <div className={`w-2 h-2 rounded-full mt-2 ${
-                  alert.type === 'maintenance' ? 'bg-yellow-500' : 
-                  alert.type === 'fuel' ? 'bg-red-500' : 'bg-green-500'
-                }`}></div>
-                <div className="flex-1">
-                  <p className="text-sm">{alert.message}</p>
-                  <p className="text-xs text-muted-foreground mt-1">{alert.time}</p>
-                </div>
-                <Badge variant={alert.type === 'maintenance' ? 'outline' : 'secondary'}>
-                  {alert.type}
-                </Badge>
-              </div>
-            ))}
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <Button variant="outline" className="flex flex-col h-24">
+              <Truck className="h-5 w-5 mb-2" />
+              <span>Add Vehicle</span>
+            </Button>
+            <Button variant="outline" className="flex flex-col h-24">
+              <Users className="h-5 w-5 mb-2" />
+              <span>Add Driver</span>
+            </Button>
+            <Button variant="outline" className="flex flex-col h-24">
+              <MapPin className="h-5 w-5 mb-2" />
+              <span>Track Vehicle</span>
+            </Button>
+            <Button variant="outline" className="flex flex-col h-24">
+              <Wrench className="h-5 w-5 mb-2" />
+              <span>Schedule Maintenance</span>
+            </Button>
           </div>
         </CardContent>
       </Card>

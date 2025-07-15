@@ -3,7 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { useAuth } from "@/hooks/useAuth";
+import { AuthProvider } from "@/contexts/AuthContext";
 import Layout from "@/components/Layout";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import Index from "./pages/Index";
@@ -12,6 +12,7 @@ import Dashboard from "./pages/Dashboard";
 import Vehicles from "./pages/Vehicles";
 import Drivers from "./pages/Drivers";
 import NotFound from "./pages/NotFound";
+import AuthTest from "./components/debug/AuthTest";
 
 const queryClient = new QueryClient();
 
@@ -21,7 +22,8 @@ const App = () => {
       <TooltipProvider>
         <Toaster />
         <Sonner />
-        <BrowserRouter>
+        <AuthProvider>
+          <BrowserRouter>
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
@@ -117,8 +119,21 @@ const App = () => {
               </ProtectedRoute>
             } />
             <Route path="*" element={<NotFound />} />
+            <Route path="/test" element={
+              <ProtectedRoute>
+                <Layout>
+                  <div className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+                    <div className="max-w-4xl mx-auto">
+                      <h1 className="text-2xl font-bold text-center mb-8">Auth Test Page</h1>
+                      <AuthTest />
+                    </div>
+                  </div>
+                </Layout>
+              </ProtectedRoute>
+            } />
           </Routes>
-        </BrowserRouter>
+          </BrowserRouter>
+        </AuthProvider>
       </TooltipProvider>
     </QueryClientProvider>
   );

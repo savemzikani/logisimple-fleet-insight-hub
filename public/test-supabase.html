@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Supabase Connection Test</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+    pre { background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto; }
+    .success { color: green; }
+    .error { color: red; }
+  </style>
+</head>
+<body>
+  <h1>Supabase Connection Test</h1>
+  <div>
+    <button id="testConnection">Test Connection</button>
+    <button id="listTables">List Tables</button>
+  </div>
+  
+  <h2>Results:</h2>
+  <pre id="output">Click a button to test the connection...</pre>
+
+  <script>
+    // Initialize Supabase client
+    const supabaseUrl = 'https://dsxnahdynbvdkibzozod.supabase.co';
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRzeG5haGR5bmJ2ZGtpYnpvem9kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI0OTE3MTAsImV4cCI6MjA2ODA2NzcxMH0.IwfGskmK1Ccvfpd6jrLs93NFMu0tkgcMDInm09AKrv4';
+    const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+
+    // DOM elements
+    const outputEl = document.getElementById('output');
+    const testBtn = document.getElementById('testConnection');
+    const listTablesBtn = document.getElementById('listTables');
+
+    // Helper function to log to the output
+    function log(message, isError = false) {
+      const timestamp = new Date().toISOString();
+      const logEntry = document.createElement('div');
+      logEntry.className = isError ? 'error' : '';
+      logEntry.textContent = `[${timestamp}] ${message}`;
+      outputEl.prepend(logEntry, document.createElement('br'));
+      console.log(message);
+    }
+
+    // Test connection
+    testBtn.addEventListener('click', async () => {
+      log('Testing connection to Supabase...');
+      
+      try {
+        const { data, error } = await supabase.auth.signInAnonymously();
+        
+        if (error) {
+          log(`❌ Error connecting to Supabase: ${error.message}`, true);
+          return;
+        }
+        
+        log('✅ Successfully connected to Supabase!');
+        log(`Session: ${JSON.stringify(data.session, null, 2)}`);
+      } catch (error) {
+        log(`❌ Unexpected error: ${error.message}`, true);
+      }
+    });
+
+    // List tables (requires RLS to be configured correctly)
+    listTablesBtn.addEventListener('click', async () => {
+      log('Fetching tables...');
+      
+      try {
+        const { data, error } = await supabase
+          .from('pg_tables')
+          .select('tablename')
+          .eq('schemaname', 'public');
+        
+        if (error) {
+          log(`❌ Error fetching tables: ${error.message}`, true);
+          return;
+        }
+        
+        if (data && data.length > 0) {
+          log('📋 Available tables:');
+          data.forEach(table => log(`- ${table.tablename}`));
+        } else {
+          log('No tables found or insufficient permissions.');
+        }
+      } catch (error) {
+        log(`❌ Unexpected error: ${error.message}`, true);
+      }
+    });
+  </script>
+</body>
+</html>

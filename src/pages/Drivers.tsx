@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { useForm, FormProvider, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -7,9 +9,12 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Users, Plus, Search, Filter, Phone, Mail, Calendar, Award } from "lucide-react";
+import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Users, Plus, Search, Filter, Phone, Mail, Calendar, Award, Pencil, Trash2, AlertCircle, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { driverFormSchema, type DriverFormValues } from "@/lib/validations";
+import { displayError } from "@/lib/utils/form-errors";
 
 interface Driver {
   id: string;
@@ -29,20 +34,28 @@ const Drivers = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [formData, setFormData] = useState({
-    employee_id: "",
-    first_name: "",
-    last_name: "",
-    email: "",
-    phone: "",
-    address: "",
-    license_number: "",
-    license_class: "CDL-A",
-    license_expiry: "",
-    hire_date: "",
-    status: "active"
-  });
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [editingDriver, setEditingDriver] = useState<Driver | null>(null);
+  const [deleteDriverId, setDeleteDriverId] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
+
+  const form = useForm<DriverFormValues>({
+    resolver: zodResolver(driverFormSchema),
+    defaultValues: {
+      employee_id: "",
+      first_name: "",
+      last_name: "",
+      email: "",
+      phone: "",
+      address: "",
+      license_number: "",
+      license_class: "CDL-A",
+      license_expiry: "",
+      hire_date: "",
+      status: "active"
+    }
+  });
 
   useEffect(() => {
     fetchDrivers();
@@ -68,78 +81,94 @@ const Drivers = () => {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
+  const onSubmit = async (data: DriverFormValues) => {
     try {
-      // Get the user's company_id
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('company_id')
-        .eq('user_id', (await supabase.auth.getUser()).data.user?.id)
-        .single();
-
-      if (profileError) throw profileError;
-
+      setIsSubmitting(true);
       const driverData = {
-        company_id: profile.company_id,
-        employee_id: formData.employee_id,
+        employee_id: data.employee_id,
         personal_info: {
-          first_name: formData.first_name,
-          last_name: formData.last_name,
-          email: formData.email,
-          phone: formData.phone,
-          address: formData.address,
-          hire_date: formData.hire_date
+          first_name: data.first_name,
+          last_name: data.last_name,
+          email: data.email,
+          phone: data.phone,
+          address: data.address,
+          hire_date: data.hire_date
         },
         license_info: {
-          license_number: formData.license_number,
-          license_class: formData.license_class,
-          license_expiry: formData.license_expiry
+          number: data.license_number,
+          class: data.license_class,
+          expiry: data.license_expiry
         },
-        certifications: {},
-        emergency_contacts: {},
-        performance_metrics: {
-          total_trips: 0,
-          miles_driven: 0,
-          safety_score: 100,
-          fuel_efficiency: 0
-        },
-        status: formData.status
+        status: data.status,
       };
 
+      if (editingDriver) {
+        const { error } = await supabase
+          .from('drivers')
+          .update(driverData)
+          .eq('id', editingDriver.id);
+
+        if (error) throw error;
+
+        toast({
+          title: "Success",
+          description: "Driver updated successfully",
+        });
+      } else {
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('company_id')
+          .eq('user_id', (await supabase.auth.getUser()).data.user?.id)
+          .single();
+
+        if (profileError) throw profileError;
+
+        const { error } = await supabase
+          .from('drivers')
+          .insert([{ ...driverData, company_id: profile.company_id }]);
+
+        if (error) throw error;
+
+        toast({
+          title: "Success",
+          description: "Driver added successfully",
+        });
+      }
+
+      setIsDialogOpen(false);
+      setEditingDriver(null);
+      form.reset();
+      await fetchDrivers();
+    } catch (error: any) {
+      displayError(toast, error, "Failed to save driver");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    try {
       const { error } = await supabase
         .from('drivers')
-        .insert([driverData]);
+        .delete()
+        .eq('id', deleteDriverId);
 
       if (error) throw error;
 
       toast({
         title: "Success",
-        description: "Driver added successfully",
+        description: "Driver deleted successfully",
       });
-
-      setIsDialogOpen(false);
-      setFormData({
-        employee_id: "",
-        first_name: "",
-        last_name: "",
-        email: "",
-        phone: "",
-        address: "",
-        license_number: "",
-        license_class: "CDL-A",
-        license_expiry: "",
-        hire_date: "",
-        status: "active"
-      });
-      fetchDrivers();
     } catch (error: any) {
       toast({
         title: "Error",
-        description: error.message || "Failed to add driver",
+        description: error.message || "Failed to delete driver",
         variant: "destructive",
       });
+    } finally {
+      setIsDeleteDialogOpen(false);
+      setDeleteDriverId(null);
+      fetchDrivers();
     }
   };
 
@@ -165,6 +194,47 @@ const Drivers = () => {
     return matchesSearch && matchesStatus;
   });
 
+  const openAddDialog = () => {
+    setEditingDriver(null);
+    form.reset({
+      employee_id: "",
+      first_name: "",
+      last_name: "",
+      email: "",
+      phone: "",
+      address: "",
+      license_number: "",
+      license_class: "CDL-A",
+      license_expiry: "",
+      hire_date: "",
+      status: "active"
+    });
+    setIsDialogOpen(true);
+  };
+
+  const openEditDialog = (driver: Driver) => {
+    setIsDialogOpen(true);
+    setEditingDriver(driver);
+    form.reset({
+      employee_id: driver.employee_id,
+      first_name: driver.personal_info?.first_name || "",
+      last_name: driver.personal_info?.last_name || "",
+      email: driver.personal_info?.email || "",
+      phone: driver.personal_info?.phone || "",
+      address: driver.personal_info?.address || "",
+      license_number: driver.license_info?.number || "",
+      license_class: driver.license_info?.class || "CDL-A",
+      license_expiry: driver.license_info?.expiry || "",
+      hire_date: driver.personal_info?.hire_date || "",
+      status: driver.status
+    });
+  };
+
+  const openDeleteDialog = (driverId: string) => {
+    setIsDeleteDialogOpen(true);
+    setDeleteDriverId(driverId);
+  };
+
   if (loading) {
     return <div className="flex-1 p-6">Loading drivers...</div>;
   }
@@ -178,141 +248,234 @@ const Drivers = () => {
             Manage your fleet drivers and track their performance
           </p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <Dialog open={isDialogOpen} onOpenChange={(open) => {
+          if (!open) {
+            setEditingDriver(null);
+            form.reset();
+          }
+          setIsDialogOpen(open);
+        }}>
           <DialogTrigger asChild>
-            <Button className="flex items-center gap-2">
+            <Button className="flex items-center gap-2" onClick={openAddDialog}>
               <Plus className="w-4 h-4" />
               Add Driver
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
+          <DialogContent className="sm:max-w-[600px]">
             <DialogHeader>
-              <DialogTitle>Add New Driver</DialogTitle>
+              <DialogTitle>{editingDriver ? 'Edit' : 'Add New'} Driver</DialogTitle>
               <DialogDescription>
-                Enter the driver details to add them to your fleet.
+                {editingDriver 
+                  ? "Update the driver's information below."
+                  : "Enter the driver's information to add them to your fleet."}
               </DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="employee_id">Employee ID</Label>
-                  <Input
-                    id="employee_id"
-                    value={formData.employee_id}
-                    onChange={(e) => setFormData({ ...formData, employee_id: e.target.value })}
-                    required
+            <FormProvider {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="employee_id"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Employee ID</FormLabel>
+                        <FormControl>
+                          <Input placeholder="EMP-001" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="hire_date"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Hire Date</FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="hire_date">Hire Date</Label>
-                  <Input
-                    id="hire_date"
-                    type="date"
-                    value={formData.hire_date}
-                    onChange={(e) => setFormData({ ...formData, hire_date: e.target.value })}
-                    required
-                  />
-                </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="first_name">First Name</Label>
-                  <Input
-                    id="first_name"
-                    value={formData.first_name}
-                    onChange={(e) => setFormData({ ...formData, first_name: e.target.value })}
-                    required
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="first_name"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>First Name</FormLabel>
+                        <FormControl>
+                          <Input placeholder="John" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="last_name"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Last Name</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Doe" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="last_name">Last Name</Label>
-                  <Input
-                    id="last_name"
-                    value={formData.last_name}
-                    onChange={(e) => setFormData({ ...formData, last_name: e.target.value })}
-                    required
-                  />
-                </div>
-              </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    required
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email</FormLabel>
+                        <FormControl>
+                          <Input placeholder="john.doe@example.com" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="phone"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Phone</FormLabel>
+                        <FormControl>
+                          <Input placeholder="+1 (555) 123-4567" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Phone</Label>
-                  <Input
-                    id="phone"
-                    type="tel"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    required
-                  />
-                </div>
-              </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="address">Address</Label>
-                <Textarea
-                  id="address"
-                  value={formData.address}
-                  onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                  rows={2}
+                <FormField
+                  control={form.control}
+                  name="address"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Address</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder="123 Main St, Anytown, USA"
+                          rows={2}
+                          {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
                 />
-              </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="license_number">License Number</Label>
-                  <Input
-                    id="license_number"
-                    value={formData.license_number}
-                    onChange={(e) => setFormData({ ...formData, license_number: e.target.value })}
-                    required
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="license_number"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>License Number</FormLabel>
+                        <FormControl>
+                          <Input placeholder="DL12345678" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="license_class"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>License Class</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select license class" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="CDL-A">CDL-A</SelectItem>
+                              <SelectItem value="CDL-B">CDL-B</SelectItem>
+                              <SelectItem value="CDL-C">CDL-C</SelectItem>
+                              <SelectItem value="Class D">Class D</SelectItem>
+                              <SelectItem value="Class E">Class E</SelectItem>
+                            </SelectContent>
+                          </FormControl>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="license_class">License Class</Label>
-                  <Select
-                    value={formData.license_class}
-                    onValueChange={(value) => setFormData({ ...formData, license_class: value })}
+
+                <FormField
+                  control={form.control}
+                  name="license_expiry"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>License Expiry</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="status"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Status</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select status" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="active">Active</SelectItem>
+                            <SelectItem value="on-leave">On Leave</SelectItem>
+                            <SelectItem value="inactive">Inactive</SelectItem>
+                            <SelectItem value="suspended">Suspended</SelectItem>
+                          </SelectContent>
+                        </FormControl>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <div className="flex justify-end gap-2 mt-4">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setIsDialogOpen(false);
+                      setEditingDriver(null);
+                      form.reset();
+                    }}
                   >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="CDL-A">CDL Class A</SelectItem>
-                      <SelectItem value="CDL-B">CDL Class B</SelectItem>
-                      <SelectItem value="CDL-C">CDL Class C</SelectItem>
-                      <SelectItem value="Regular">Regular License</SelectItem>
-                    </SelectContent>
-                  </Select>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    {editingDriver ? 'Update' : 'Add'} Driver
+                  </Button>
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="license_expiry">License Expiry</Label>
-                <Input
-                  id="license_expiry"
-                  type="date"
-                  value={formData.license_expiry}
-                  onChange={(e) => setFormData({ ...formData, license_expiry: e.target.value })}
-                  required
-                />
-              </div>
-
-              <Button type="submit" className="w-full">
-                Add Driver
-              </Button>
-            </form>
+              </form>
+            </FormProvider>
           </DialogContent>
         </Dialog>
       </div>
@@ -365,6 +528,22 @@ const Drivers = () => {
                 <Badge className={getStatusColor(driver.status)}>
                   {driver.status}
                 </Badge>
+                <div className="flex items-center gap-2">
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={() => openEditDialog(driver)}
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </Button>
+                  <Button 
+                    type="button" 
+                    variant="destructive" 
+                    onClick={() => openDeleteDialog(driver.id)}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -379,7 +558,7 @@ const Drivers = () => {
                 </div>
                 <div className="flex items-center gap-2">
                   <Award className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm">{driver.license_info?.license_class}</span>
+                  <span className="text-sm">{driver.license_info?.class}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Calendar className="w-4 h-4 text-muted-foreground" />
@@ -416,6 +595,35 @@ const Drivers = () => {
         ))}
       </div>
 
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-destructive" />
+              <DialogTitle>Delete Driver</DialogTitle>
+            </div>
+            <DialogDescription>
+              Are you sure you want to delete this driver? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2">
+            <Button 
+              variant="outline" 
+              onClick={() => setIsDeleteDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive"
+              onClick={handleDelete}
+            >
+              Delete
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {filteredDrivers.length === 0 && (
         <div className="text-center py-12">
           <Users className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
@@ -427,7 +635,7 @@ const Drivers = () => {
             }
           </p>
           {!searchTerm && statusFilter === 'all' && (
-            <Button onClick={() => setIsDialogOpen(true)}>
+            <Button onClick={openAddDialog}>
               <Plus className="w-4 h-4 mr-2" />
               Add Driver
             </Button>

@@ -1,0 +1,411 @@
+import { useState } from 'react';
+import { formatDistanceToNow } from 'date-fns';
+import { motion } from 'framer-motion';
+import { cn } from "@/lib/utils";
+
+// Icons
+import { 
+  ArrowUpRight, 
+  ArrowDownRight, 
+  Loader2, 
+  RefreshCw, 
+  Truck, 
+  Users, 
+  MapPin, 
+  Wrench,
+  AlertCircle,
+  CheckCircle2,
+  TrendingUp
+} from 'lucide-react';
+
+// Components
+import { Button } from "@/components/ui/button";
+import { 
+  Card, 
+  CardContent, 
+  CardDescription, 
+  CardHeader, 
+  CardTitle 
+} from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Progress } from "@/components/ui/progress";
+
+// Hooks
+import { useVehicles } from "@/hooks/useVehicles";
+import { useDrivers } from "@/hooks/useDrivers";
+import { useCompany } from "@/hooks/useCompany";
+
+// Constants
+const COLORS = {
+  active: 'hsl(142.1, 76.2%, 36.3%)',
+  maintenance: 'hsl(38, 92%, 50%)',
+  inactive: 'hsl(0, 84.2%, 60.2%)',
+};
+
+interface StatCardProps {
+  title: string;
+  value: string | number;
+  icon: React.ElementType;
+  description: string;
+  trend?: {
+    value: string;
+    direction: 'up' | 'down' | 'neutral';
+    change: string;
+  };
+  color: string;
+  iconColor: string;
+  isLoading?: boolean;
+}
+
+const StatCard: React.FC<StatCardProps> = ({
+  title,
+  value,
+  icon: Icon,
+  description,
+  trend,
+  color,
+  iconColor,
+  isLoading = false
+}) => {
+  const TrendIcon = trend?.direction === 'up' ? ArrowUpRight : 
+                   trend?.direction === 'down' ? ArrowDownRight : null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+    >
+      <Card className="overflow-hidden hover:shadow-md transition-shadow">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium text-muted-foreground">
+            {title}
+          </CardTitle>
+          <div className={`p-2 rounded-lg ${color}`}>
+            <Icon className={`h-4 w-4 ${iconColor}`} />
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold">
+            {isLoading ? <Skeleton className="h-8 w-16" /> : value}
+          </div>
+          <p className="text-xs text-muted-foreground mt-1">{description}</p>
+          {trend && (
+            <div className="mt-2 flex items-center text-xs">
+              {TrendIcon && (
+                <TrendIcon 
+                  className={cn(
+                    "h-3.5 w-3.5 mr-1",
+                    trend.direction === 'up' ? 'text-green-500' : 'text-amber-500'
+                  )} 
+                />
+              )}
+              <span className={cn(
+                "font-medium",
+                trend.direction === 'up' ? 'text-green-600 dark:text-green-400' : 
+                trend.direction === 'down' ? 'text-amber-600 dark:text-amber-400' :
+                'text-muted-foreground'
+              )}>
+                {trend.value} {trend.change}
+              </span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+};
+
+const Dashboard = () => {
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+  
+  // Fetch data using custom hooks
+  const { 
+    vehicles = [], 
+    isLoading: isLoadingVehicles, 
+    statusCounts: vehicleStatusCounts = { active: 0, maintenance: 0, inactive: 0 },
+    refetch: refetchVehicles 
+  } = useVehicles();
+  
+  const { 
+    drivers = [], 
+    isLoading: isLoadingDrivers,
+    refetch: refetchDrivers 
+  } = useDrivers();
+  
+  const { 
+    stats: companyStats = {
+      active_vehicles: 0,
+      upcoming_maintenance: 0,
+      total_vehicles: 0,
+      total_drivers: 0,
+    }, 
+    isLoading: isLoadingStats 
+  } = useCompany();
+
+  // Calculate derived values
+  const activeDrivers = drivers.filter(d => d.status === 'active').length;
+  const totalVehicles = vehicles.length;
+  const maintenanceDue = companyStats.upcoming_maintenance || 0;
+  const onRoute = companyStats.active_vehicles || 0;
+  const utilizationRate = vehicles.length > 0 
+    ? Math.round((companyStats.active_vehicles / vehicles.length) * 100) 
+    : 0;
+
+  // Refresh all dashboard data
+  const refreshData = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([refetchVehicles(), refetchDrivers()]);
+      setLastUpdated(new Date());
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  // Dashboard stats
+  const fleetStats = [
+    { 
+      id: 'total-vehicles',
+      title: "Total Vehicles", 
+      value: totalVehicles,
+      description: "In your fleet",
+      icon: Truck,
+      trend: {
+        value: "+2.5%",
+        direction: "up",
+        change: "vs last month"
+      },
+      color: "bg-blue-100 dark:bg-blue-900/30",
+      iconColor: "text-blue-600 dark:text-blue-400"
+    },
+    { 
+      id: 'active-drivers',
+      title: "Active Drivers", 
+      value: activeDrivers,
+      description: "Currently available",
+      icon: Users,
+      trend: {
+        value: "+5.2%",
+        direction: "up",
+        change: "vs last month"
+      },
+      color: "bg-green-100 dark:bg-green-900/30",
+      iconColor: "text-green-600 dark:text-green-400"
+    },
+    { 
+      id: 'on-route',
+      title: "On Route", 
+      value: onRoute,
+      description: "Currently in transit",
+      icon: MapPin,
+      trend: {
+        value: "-1.8%",
+        direction: "down",
+        change: "vs yesterday"
+      },
+      color: "bg-purple-100 dark:bg-purple-900/30",
+      iconColor: "text-purple-600 dark:text-purple-400"
+    },
+    { 
+      id: 'maintenance-due',
+      title: "Maintenance Due", 
+      value: maintenanceDue,
+      description: "Needs attention",
+      icon: Wrench,
+      trend: {
+        value: maintenanceDue > 0 ? "+3" : "0",
+        direction: maintenanceDue > 0 ? "up" : "neutral",
+        change: "due this week"
+      },
+      color: "bg-amber-100 dark:bg-amber-900/30",
+      iconColor: "text-amber-600 dark:text-amber-400"
+    },
+  ];
+
+  // Recent alerts and activities
+  const recentAlerts = [
+    ...(maintenanceDue > 0 ? [{
+      id: 1, 
+      type: "warning", 
+      message: `${maintenanceDue} vehicles due for maintenance soon`,
+      time: formatDistanceToNow(new Date(Date.now() - 1000 * 60 * 30), { addSuffix: true }),
+      icon: AlertCircle,
+      iconColor: "text-amber-500"
+    }] : []),
+    ...(totalVehicles > 0 ? [{
+      id: 2, 
+      type: "info", 
+      message: `${totalVehicles} vehicles in your fleet`,
+      time: formatDistanceToNow(new Date(Date.now() - 1000 * 60 * 120), { addSuffix: true }),
+      icon: Truck,
+      iconColor: "text-blue-500"
+    }] : []),
+    ...(activeDrivers > 0 ? [{
+      id: 3, 
+      type: "success", 
+      message: `${activeDrivers} active drivers`,
+      time: formatDistanceToNow(new Date(Date.now() - 1000 * 60 * 180), { addSuffix: true }),
+      icon: CheckCircle2,
+      iconColor: "text-green-500"
+    }] : []),
+  ].slice(0, 5);
+
+  // Loading state
+  const isLoading = isLoadingVehicles || isLoadingDrivers || isLoadingStats;
+
+  // Show full page loading state on initial load
+  if (isLoading && !isRefreshing) {
+    return (
+      <div className="flex-1 flex items-center justify-center min-h-[calc(100vh-200px)]">
+        <div className="text-center space-y-4">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
+          <p className="text-muted-foreground">Loading dashboard data...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 space-y-6 p-4 md:p-6">
+      {/* Header */}
+      <div className="flex flex-col justify-between space-y-2 sm:flex-row sm:items-center sm:space-y-0">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Dashboard Overview</h1>
+          <p className="text-muted-foreground">
+            Welcome back! Here's what's happening with your fleet.
+          </p>
+        </div>
+        <div className="flex items-center space-x-3">
+          <div className="hidden sm:flex items-center text-sm text-muted-foreground">
+            <span className="hidden md:inline">Last updated</span>
+            <span className="mx-1">•</span>
+            <time dateTime={lastUpdated.toISOString()}>
+              {formatDistanceToNow(lastUpdated, { addSuffix: true })}
+            </time>
+          </div>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={refreshData}
+            disabled={isRefreshing}
+            className="shrink-0"
+          >
+            {isRefreshing ? (
+              <>
+                <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                Refreshing...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                Refresh
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+
+      {/* Stats Grid */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {fleetStats.map((stat) => (
+          <StatCard
+            key={stat.id}
+            title={stat.title}
+            value={stat.value}
+            icon={stat.icon}
+            description={stat.description}
+            trend={stat.trend}
+            color={stat.color}
+            iconColor={stat.iconColor}
+            isLoading={isRefreshing}
+          />
+        ))}
+      </div>
+
+      {/* Main Content */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Fleet Overview */}
+        <Card className="hover:shadow-md transition-shadow">
+          <CardHeader>
+            <CardTitle>Fleet Overview</CardTitle>
+            <CardDescription>Summary of your fleet status</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {vehicles.length === 0 ? (
+              <div className="h-[300px] flex flex-col items-center justify-center text-center p-6">
+                <Truck className="h-12 w-12 text-muted-foreground mb-4" />
+                <h3 className="text-lg font-medium">No vehicles found</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Add your first vehicle to get started
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Total Vehicles</p>
+                    <p className="text-2xl font-bold">{vehicles.length}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Active</p>
+                    <p className="text-2xl font-bold">
+                      {vehicleStatusCounts?.active || 0}
+                    </p>
+                  </div>
+                </div>
+                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-primary" 
+                    style={{
+                      width: `${(vehicles.length > 0 ? ((vehicleStatusCounts?.active || 0) / vehicles.length) * 100 : 0)}%`
+                    }}
+                  />
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {((vehicleStatusCounts?.active || 0) / (vehicles.length || 1) * 100).toFixed(0)}% of fleet active
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Recent Activity */}
+        <Card className="hover:shadow-md transition-shadow">
+          <CardHeader>
+            <CardTitle>Recent Activity</CardTitle>
+            <CardDescription>Latest updates and notifications</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {recentAlerts.length === 0 ? (
+              <div className="h-[300px] flex flex-col items-center justify-center text-center p-6">
+                <CheckCircle2 className="h-12 w-12 text-muted-foreground mb-4" />
+                <h3 className="text-lg font-medium">No recent activity</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Your recent activities will appear here
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {recentAlerts.map((alert) => (
+                  <div key={alert.id} className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/50 transition-colors">
+                    <div className={`p-2 rounded-full ${alert.type === 'warning' ? 'bg-amber-100 dark:bg-amber-900/30' : 'bg-blue-100 dark:bg-blue-900/30'}`}>
+                      <alert.icon className={`h-4 w-4 ${alert.iconColor}`} />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">{alert.message}</p>
+                      <p className="text-xs text-muted-foreground mt-1">{alert.time}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+};
+
+export default Dashboard;

@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { useForm, FormProvider, Controller } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -7,9 +9,13 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Truck, Plus, Search, Filter, MapPin, Wrench, Fuel } from "lucide-react";
+import { FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { Truck, Plus, Search, Filter, MapPin, Wrench, Fuel, Pencil, Trash2, AlertCircle, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { vehicleFormSchema, type VehicleFormValues } from "@/lib/validations";
+import { displayError } from "@/lib/utils/form-errors";
+import { Textarea } from "@/components/ui/textarea";
 
 interface Vehicle {
   id: string;
@@ -29,16 +35,31 @@ const Vehicles = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [formData, setFormData] = useState({
-    make: "",
-    model: "",
-    year: new Date().getFullYear(),
-    vin: "",
-    license_plate: "",
-    vehicle_type: "truck",
-    status: "active"
-  });
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
+  const [deleteVehicleId, setDeleteVehicleId] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
+
+  const form = useForm<VehicleFormValues>({
+    resolver: zodResolver(vehicleFormSchema),
+    defaultValues: {
+      make: "",
+      model: "",
+      year: new Date().getFullYear(),
+      vin: "",
+      license_plate: "",
+      vehicle_type: "truck",
+      fuel_type: "diesel",
+      fuel_efficiency: 0,
+      mileage: 0,
+      status: "available",
+      last_service_date: "",
+      next_service_mileage: 0,
+      insurance_expiry: "",
+      registration_expiry: ""
+    }
+  });
 
   useEffect(() => {
     fetchVehicles();
@@ -68,41 +89,94 @@ const Vehicles = () => {
     e.preventDefault();
     
     try {
-      // First, get the user's company_id from their profile
-      const { data: profile, error: profileError } = await supabase
-        .from('profiles')
-        .select('company_id')
-        .eq('user_id', (await supabase.auth.getUser()).data.user?.id)
-        .single();
+      if (editingVehicle) {
+        // Update existing vehicle
+        const { error } = await supabase
+          .from('vehicles')
+          .update(formData)
+          .eq('id', editingVehicle.id);
 
-      if (profileError) throw profileError;
+        if (error) throw error;
 
+        toast({
+          title: "Success",
+          description: "Vehicle updated successfully",
+        });
+      } else {
+        const { error } = await supabase
+          .from('vehicles')
+          .insert([vehicleData]);
+
+        if (error) throw error;
+
+        toast({
+          title: "Success",
+          description: "Vehicle added successfully",
+        });
+      }
+
+      setIsDialogOpen(false);
+      setEditingVehicle(null);
+      form.reset();
+      await fetchVehicles();
+    } catch (error: any) {
+      displayError(toast, error, "Failed to save vehicle");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const openAddDialog = () => {
+    setIsDialogOpen(true);
+  };
+
+  const openEditDialog = (vehicle: Vehicle) => {
+    setEditingVehicle(vehicle);
+    form.reset({
+      make: vehicle.make,
+      model: vehicle.model,
+      year: vehicle.year,
+      vin: vehicle.vin,
+      license_plate: vehicle.license_plate,
+      vehicle_type: vehicle.vehicle_type,
+      fuel_type: vehicle.fuel_type || "diesel",
+      fuel_efficiency: vehicle.fuel_efficiency || 0,
+      mileage: vehicle.mileage || 0,
+      status: vehicle.status,
+      last_service_date: vehicle.last_service_date || "",
+      next_service_mileage: vehicle.next_service_mileage || 0,
+      insurance_expiry: vehicle.insurance_expiry || "",
+      registration_expiry: vehicle.registration_expiry || ""
+    });
+    setIsDialogOpen(true);
+  };
+
+  const openDeleteDialog = (id: string) => {
+    setDeleteVehicleId(id);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleDelete = async () => {
+    try {
       const { error } = await supabase
         .from('vehicles')
-        .insert([{ ...formData, company_id: profile.company_id }]);
+        .delete()
+        .eq('id', deleteVehicleId);
 
       if (error) throw error;
 
       toast({
         title: "Success",
-        description: "Vehicle added successfully",
+        description: "Vehicle deleted successfully",
       });
 
-      setIsDialogOpen(false);
-      setFormData({
-        make: "",
-        model: "",
-        year: new Date().getFullYear(),
-        vin: "",
-        license_plate: "",
-        vehicle_type: "truck",
-        status: "active"
-      });
+      setIsDeleteDialogOpen(false);
+      setDeleteVehicleId(null);
       fetchVehicles();
     } catch (error: any) {
       toast({
         title: "Error",
-        description: error.message || "Failed to add vehicle",
+        description: error.message || "Failed to delete vehicle",
         variant: "destructive",
       });
     }
@@ -143,97 +217,340 @@ const Vehicles = () => {
             Manage your fleet vehicles and track their status
           </p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <Dialog open={isDialogOpen} onOpenChange={(open) => {
+          if (!open) {
+            setEditingVehicle(null);
+            form.reset();
+          }
+          setIsDialogOpen(open);
+        }}>
           <DialogTrigger asChild>
-            <Button className="flex items-center gap-2">
+            <Button className="flex items-center gap-2" onClick={openAddDialog}>
               <Plus className="w-4 h-4" />
               Add Vehicle
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[425px]">
+          <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Add New Vehicle</DialogTitle>
+              <DialogTitle>{editingVehicle ? 'Edit' : 'Add New'} Vehicle</DialogTitle>
               <DialogDescription>
-                Enter the vehicle details to add it to your fleet.
+                {editingVehicle 
+                  ? "Update the vehicle details below."
+                  : "Enter the vehicle details to add it to your fleet."}
               </DialogDescription>
             </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="make">Make</Label>
-                  <Input
-                    id="make"
-                    value={formData.make}
-                    onChange={(e) => setFormData({ ...formData, make: e.target.value })}
-                    required
+            <FormProvider {...form}>
+              <form onSubmit={form.handleSubmit(async (data) => {
+                try {
+                  setIsSubmitting(true);
+                  
+                  if (editingVehicle) {
+                    // Update existing vehicle
+                    const { error } = await supabase
+                      .from('vehicles')
+                      .update(data)
+                      .eq('id', editingVehicle.id);
+
+                    if (error) throw error;
+
+                    toast({
+                      title: "Success",
+                      description: "Vehicle updated successfully",
+                    });
+                  } else {
+                    // Create new vehicle
+                    const { error } = await supabase
+                      .from('vehicles')
+                      .insert([data]);
+
+                    if (error) throw error;
+
+                    toast({
+                      title: "Success",
+                      description: "Vehicle added successfully",
+                    });
+                  }
+
+                  setIsDialogOpen(false);
+                  setEditingVehicle(null);
+                  form.reset();
+                  await fetchVehicles();
+                } catch (error: any) {
+                  displayError(toast, error, "Failed to save vehicle");
+                } finally {
+                  setIsSubmitting(false);
+                }
+              })} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="make"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Make</FormLabel>
+                        <FormControl>
+                          <Input placeholder="Ford" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="model"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Model</FormLabel>
+                        <FormControl>
+                          <Input placeholder="F-150" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="model">Model</Label>
-                  <Input
-                    id="model"
-                    value={formData.model}
-                    onChange={(e) => setFormData({ ...formData, model: e.target.value })}
-                    required
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="year"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Year</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min="1900"
+                            max={new Date().getFullYear() + 1}
+                            {...field}
+                            onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="vin"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>VIN</FormLabel>
+                        <FormControl>
+                          <Input placeholder="1HGCM82633A123456" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
                   />
                 </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="year">Year</Label>
-                  <Input
-                    id="year"
-                    type="number"
-                    min="1900"
-                    max={new Date().getFullYear() + 1}
-                    value={formData.year}
-                    onChange={(e) => setFormData({ ...formData, year: parseInt(e.target.value) })}
-                    required
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="license_plate"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>License Plate</FormLabel>
+                        <FormControl>
+                          <Input placeholder="ABC123" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="vehicle_type"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Vehicle Type</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select vehicle type" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="truck">Truck</SelectItem>
+                            <SelectItem value="van">Van</SelectItem>
+                            <SelectItem value="car">Car</SelectItem>
+                            <SelectItem value="suv">SUV</SelectItem>
+                            <SelectItem value="other">Other</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="vehicle_type">Type</Label>
-                  <Select
-                    value={formData.vehicle_type}
-                    onValueChange={(value) => setFormData({ ...formData, vehicle_type: value })}
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="fuel_type"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Fuel Type</FormLabel>
+                          <Select onValueChange={field.onChange} value={field.value}>
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select fuel type" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              <SelectItem value="gasoline">Gasoline</SelectItem>
+                              <SelectItem value="diesel">Diesel</SelectItem>
+                              <SelectItem value="electric">Electric</SelectItem>
+                              <SelectItem value="hybrid">Hybrid</SelectItem>
+                              <SelectItem value="cng">CNG</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="fuel_efficiency"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Fuel Efficiency (MPG)</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            {...field}
+                            onChange={(e) => field.onChange(parseFloat(e.target.value) || 0)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="mileage"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Current Mileage</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min="0"
+                            {...field}
+                            onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="status"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Status</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select status" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="available">Available</SelectItem>
+                            <SelectItem value="in-use">In Use</SelectItem>
+                            <SelectItem value="maintenance">Maintenance</SelectItem>
+                            <SelectItem value="out-of-service">Out of Service</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="last_service_date"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Last Service Date</FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="next_service_mileage"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Next Service Mileage</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min="0"
+                            {...field}
+                            onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="insurance_expiry"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Insurance Expiry</FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="registration_expiry"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Registration Expiry</FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <Button type="submit" className="flex-1" disabled={isSubmitting}>
+                    {isSubmitting && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    {editingVehicle ? 'Update' : 'Add'} Vehicle
+                      setEditingVehicle(null);
+                    }}
                   >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="truck">Truck</SelectItem>
-                      <SelectItem value="van">Van</SelectItem>
-                      <SelectItem value="car">Car</SelectItem>
-                      <SelectItem value="trailer">Trailer</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                    Cancel
+                  </Button>
+                )}
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="vin">VIN</Label>
-                <Input
-                  id="vin"
-                  value={formData.vin}
-                  onChange={(e) => setFormData({ ...formData, vin: e.target.value })}
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="license_plate">License Plate</Label>
-                <Input
-                  id="license_plate"
-                  value={formData.license_plate}
-                  onChange={(e) => setFormData({ ...formData, license_plate: e.target.value })}
-                  required
-                />
-              </div>
-
-              <Button type="submit" className="w-full">
-                Add Vehicle
-              </Button>
             </form>
           </DialogContent>
         </Dialog>
@@ -300,17 +617,23 @@ const Vehicles = () => {
               </div>
               
               <div className="flex gap-2 pt-2">
-                <Button size="sm" variant="outline" className="flex-1">
-                  <MapPin className="w-4 h-4 mr-1" />
-                  Track
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={() => openEditDialog(vehicle)}
+                >
+                  <Pencil className="w-4 h-4 mr-1" />
+                  Edit
                 </Button>
-                <Button size="sm" variant="outline" className="flex-1">
-                  <Wrench className="w-4 h-4 mr-1" />
-                  Service
-                </Button>
-                <Button size="sm" variant="outline" className="flex-1">
-                  <Fuel className="w-4 h-4 mr-1" />
-                  Fuel
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={() => openDeleteDialog(vehicle.id)}
+                >
+                  <Trash2 className="w-4 h-4 mr-1" />
+                  Delete
                 </Button>
               </div>
             </CardContent>
@@ -329,7 +652,7 @@ const Vehicles = () => {
             }
           </p>
           {!searchTerm && statusFilter === 'all' && (
-            <Button onClick={() => setIsDialogOpen(true)}>
+            <Button onClick={openAddDialog}>
               <Plus className="w-4 h-4 mr-2" />
               Add Vehicle
             </Button>
