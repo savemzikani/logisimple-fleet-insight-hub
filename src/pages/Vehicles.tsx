@@ -544,14 +544,19 @@ const Vehicles = () => {
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     )}
                     {editingVehicle ? 'Update' : 'Add'} Vehicle
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
                       setEditingVehicle(null);
+                      setIsDialogOpen(false);
                     }}
                   >
                     Cancel
                   </Button>
-                )}
-              </div>
-            </form>
+                </div>
+              </form>
+            </FormProvider>
           </DialogContent>
         </Dialog>
       </div>

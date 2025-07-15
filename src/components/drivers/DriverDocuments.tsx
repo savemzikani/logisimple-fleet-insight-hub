@@ -162,6 +162,10 @@ export function DriverDocuments({
       case 'pending_upload':
         return <Badge variant="outline" className="whitespace-nowrap">Uploading</Badge>;
       case 'valid':
+        return (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            Valid
+          </span>
         );
       default:
         return (
@@ -202,7 +206,13 @@ export function DriverDocuments({
                 id="document-upload"
                 type="file"
                 className="hidden"
-                onChange={handleFileUpload}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    setSelectedFile(file);
+                    setIsUploadDialogOpen(true);
+                  }
+                }}
                 accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
               />
             </Button>
