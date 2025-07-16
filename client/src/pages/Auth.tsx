@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Truck, Mail, Lock, Building2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
 
 const Auth = () => {
   const [email, setEmail] = useState('');
@@ -17,6 +18,7 @@ const Auth = () => {
   const [loading, setLoading] = useState(false);
   const { signIn, signUp, user } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
 
   useEffect(() => {
     if (user) {
@@ -28,7 +30,19 @@ const Auth = () => {
     e.preventDefault();
     setLoading(true);
     
-    await signIn(email, password);
+    const result = await signIn(email, password);
+    if (result.error) {
+      toast({
+        title: "Sign In Failed",
+        description: result.error,
+        variant: "destructive",
+      });
+    } else {
+      toast({
+        title: "Welcome back!",
+        description: "You have successfully signed in.",
+      });
+    }
     setLoading(false);
   };
 
@@ -47,7 +61,25 @@ const Auth = () => {
       updated_at: new Date().toISOString()
     };
     
-    await signUp(email, password, userData);
+    const result = await signUp(email, password, userData);
+    if (result.error) {
+      toast({
+        title: "Account Creation Failed",
+        description: result.error,
+        variant: "destructive",
+      });
+    } else {
+      toast({
+        title: "Account Created Successfully!",
+        description: "Welcome to LogiSimple. You can now manage your fleet.",
+      });
+      // Clear form on success
+      setEmail('');
+      setPassword('');
+      setFirstName('');
+      setLastName('');
+      setCompanyName('');
+    }
     setLoading(false);
   };
 

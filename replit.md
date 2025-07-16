@@ -4,6 +4,8 @@
 
 This is a comprehensive fleet management system built with React, TypeScript, Express.js, and PostgreSQL. The application provides tools for managing vehicles, drivers, and fleet operations with real-time analytics and reporting capabilities.
 
+**Recent Migration:** Successfully migrated from Lovable/Supabase to Replit environment with enhanced security features (July 16, 2025).
+
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
