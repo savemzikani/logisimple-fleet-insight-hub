@@ -1,8 +1,11 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
-import { User, Session } from '@supabase/supabase-js';
-import { UserProfile } from '@/types';
+import { UserProfile } from '@/lib/types';
 import { authService } from '@/lib/api';
-import { supabase } from '@/integrations/supabase/client';
+
+interface User {
+  id: string;
+  email: string;
+}
 
 interface AuthContextType {
   user: User | null;
@@ -26,23 +29,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const fetchUser = useCallback(async () => {
     try {
       setLoading(true);
-      const { data: { session } } = await supabase.auth.getSession();
       
-      if (session?.user) {
-        const { data: profile, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('user_id', session.user.id)
-          .single();
-
-        if (error) {
-          console.error('Error fetching profile:', error);
-          setUser(session.user);
-          setProfile(null);
-        } else {
-          setUser(session.user);
-          setProfile(profile as UserProfile);
-        }
+      // Try to get the current user profile from our API
+      const response = await fetch('/api/profile', {
+        credentials: 'include'
+      });
+      
+      if (response.ok) {
+        const profile = await response.json();
+        setUser({ id: profile.user_id, email: profile.email });
+        setProfile(profile as UserProfile);
       } else {
         setUser(null);
         setProfile(null);
@@ -61,41 +57,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // Initial fetch
     fetchUser();
 
-    // Listen for auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (session?.user) {
-          const { data: profile, error } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('user_id', session.user.id)
-            .single();
-
-          if (error) {
-            console.error('Error fetching profile on auth change:', error);
-            setUser(session.user);
-            setProfile(null);
-          } else {
-            setUser(session.user);
-            setProfile(profile as UserProfile);
-          }
-        } else {
-          setUser(null);
-          setProfile(null);
-        }
-      }
-    );
-
-    // Cleanup
-    return () => {
-      subscription?.unsubscribe();
-    };
+    // For session-based auth, we don't need real-time listeners
+    // The session state will be checked when needed via API calls
   }, [fetchUser]);
 
   const signIn = async (email: string, password: string) => {
     try {
-      const { error } = await authService.signIn(email, password);
-      return { error: error || null };
+      const { data, error } = await authService.signIn(email, password);
+      if (!error && data) {
+        setUser(data.user);
+        setProfile(data.profile);
+        return { error: null };
+      }
+      return { error: error.message || 'Failed to sign in' };
     } catch (error: any) {
       console.error('Error in signIn:', error);
       return { error: error.message || 'Failed to sign in' };
@@ -104,8 +78,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const signUp = async (email: string, password: string, userData: Partial<UserProfile>) => {
     try {
-      const { error } = await authService.signUp(email, password, userData);
-      return { error: error || null };
+      const { data, error } = await authService.signUp(email, password, userData);
+      if (!error && data) {
+        setUser(data.user);
+        setProfile(data.profile);
+        return { error: null };
+      }
+      return { error: error.message || 'Failed to sign up' };
     } catch (error: any) {
       console.error('Error in signUp:', error);
       return { error: error.message || 'Failed to sign up' };
@@ -115,13 +94,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const signOut = async () => {
     try {
       const { error } = await authService.signOut();
-      if (error) {
-        console.error('Error signing out:', error);
-        return { error };
+      if (!error) {
+        setUser(null);
+        setProfile(null);
+        return { error: null };
       }
-      setUser(null);
-      setProfile(null);
-      return { error: null };
+      return { error: error.message || 'Failed to sign out' };
     } catch (error: any) {
       console.error('Error in signOut:', error);
       return { error: error.message || 'Failed to sign out' };
@@ -131,7 +109,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const resetPassword = async (email: string) => {
     try {
       const { error } = await authService.resetPassword(email);
-      return { error: error || null };
+      return { error: error?.message || null };
     } catch (error: any) {
       console.error('Error in resetPassword:', error);
       return { error: error.message || 'Failed to reset password' };
@@ -141,7 +119,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const updatePassword = async (newPassword: string) => {
     try {
       const { error } = await authService.updatePassword(newPassword);
-      return { error: error || null };
+      return { error: error?.message || null };
     } catch (error: any) {
       console.error('Error in updatePassword:', error);
       return { error: error.message || 'Failed to update password' };
