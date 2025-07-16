@@ -6,65 +6,100 @@ export interface UserProfile {
   last_name: string;
   email: string;
   role: 'admin' | 'manager' | 'dispatcher' | 'driver';
+  avatar_url?: string;
+  phone?: string;
   created_at: string;
   updated_at: string;
 }
 
 // Vehicle Types
+export type VehicleStatus = 'available' | 'assigned' | 'maintenance' | 'out_of_service';
+export type VehicleType = 'truck' | 'van' | 'car' | 'motorcycle' | 'trailer';
+
 export interface Vehicle {
   id: string;
   company_id: string;
   make: string;
   model: string;
   year: number;
-  vin: string;
-  license_plate: string;
-  vehicle_type: string;
-  status: 'active' | 'maintenance' | 'inactive';
-  specifications: {
-    fuel_type?: string;
-    fuel_capacity?: number;
-    odometer?: number;
-    color?: string;
-  };
+  vin?: string;
+  license_plate?: string;
+  status?: VehicleStatus;
+  mileage?: number;
+  last_service_date?: string;
+  next_service_mileage?: number;
+  color?: string;
+  fuel_type?: string;
+  fuel_efficiency?: number;
+  current_mileage?: number;
+  insurance_provider?: string;
+  insurance_policy_number?: string;
+  insurance_expiry?: string;
+  registration_expiry?: string;
+  notes?: string;
   created_at: string;
   updated_at: string;
 }
 
 // Driver Types
-export interface DriverPersonalInfo {
-  first_name: string;
-  last_name: string;
-  email: string;
-  phone: string;
-  address: string;
-  hire_date: string;
-}
-
-export interface DriverLicenseInfo {
-  license_number: string;
-  license_class: string;
-  license_expiry: string;
-  license_state: string;
-}
-
-export interface DriverPerformanceMetrics {
-  total_trips: number;
-  miles_driven: number;
-  safety_score: number;
-  fuel_efficiency: number;
-}
+export type DriverStatus = 'active' | 'on-leave' | 'inactive' | 'suspended';
 
 export interface Driver {
   id: string;
   company_id: string;
-  employee_id: string;
-  personal_info: DriverPersonalInfo;
-  license_info: DriverLicenseInfo;
-  certifications: Record<string, any>;
-  emergency_contacts: Record<string, any>;
-  performance_metrics: DriverPerformanceMetrics;
-  status: 'active' | 'on-leave' | 'inactive' | 'suspended';
+  first_name: string;
+  last_name: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  license_number?: string;
+  license_class?: string;
+  license_expiry?: string;
+  hire_date?: string;
+  city?: string;
+  state?: string;
+  postal_code?: string;
+  country?: string;
+  emergency_contact_name?: string;
+  emergency_contact_phone?: string;
+  notes?: string;
+  is_active: boolean;
+  user_id?: string;
+  status?: DriverStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+// Filter Types
+export interface DriverFilter {
+  search?: string;
+  status?: DriverStatus;
+  license_expiry?: 'expiring' | 'expired';
+}
+
+// Assignment Types
+export interface Assignment {
+  id: string;
+  vehicle_id: string;
+  driver_id?: string;
+  assigned_by?: string;
+  start_date: string;
+  end_date?: string;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Document Types
+export interface Document {
+  id: string;
+  driver_id: string;
+  type: string;
+  filename: string;
+  file_url: string;
+  status: 'pending' | 'approved' | 'rejected' | 'expired';
+  expiry_date?: string;
+  metadata?: Record<string, any>;
   created_at: string;
   updated_at: string;
 }
