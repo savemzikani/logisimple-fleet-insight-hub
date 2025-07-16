@@ -22,7 +22,9 @@ export const profiles = pgTable("profiles", {
   first_name: text("first_name").notNull(),
   last_name: text("last_name").notNull(),
   phone: text("phone"),
-  role: text("role").default("user").notNull(),
+  role: text("role", { enum: ["admin", "fleet_manager", "dispatcher", "driver", "viewer"] }).default("viewer").notNull(),
+  permissions: text("permissions").array().default([]).notNull(),
+  is_active: boolean("is_active").default(true).notNull(),
   avatar_url: text("avatar_url"),
   created_at: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updated_at: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -228,3 +230,46 @@ export const insertUserSchema = createInsertSchema(users).pick({
 
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof users.$inferSelect;
+
+// Role-based access control definitions
+export type UserRole = "admin" | "fleet_manager" | "dispatcher" | "driver" | "viewer";
+
+export const ROLE_PERMISSIONS = {
+  admin: [
+    "users:create", "users:read", "users:update", "users:delete",
+    "companies:create", "companies:read", "companies:update", "companies:delete",
+    "vehicles:create", "vehicles:read", "vehicles:update", "vehicles:delete",
+    "drivers:create", "drivers:read", "drivers:update", "drivers:delete",
+    "trips:create", "trips:read", "trips:update", "trips:delete",
+    "reports:read", "reports:create", "settings:update"
+  ],
+  fleet_manager: [
+    "vehicles:create", "vehicles:read", "vehicles:update", "vehicles:delete",
+    "drivers:create", "drivers:read", "drivers:update", "drivers:delete",
+    "trips:create", "trips:read", "trips:update",
+    "reports:read", "reports:create"
+  ],
+  dispatcher: [
+    "vehicles:read", "drivers:read", "drivers:update",
+    "trips:create", "trips:read", "trips:update",
+    "reports:read"
+  ],
+  driver: [
+    "vehicles:read", "drivers:read", "trips:read", "trips:update"
+  ],
+  viewer: [
+    "vehicles:read", "drivers:read", "trips:read", "reports:read"
+  ]
+} as const;
+
+export type Permission = typeof ROLE_PERMISSIONS[UserRole][number];
+
+export function hasPermission(userRole: UserRole, userPermissions: string[], requiredPermission: string): boolean {
+  const rolePermissions = ROLE_PERMISSIONS[userRole] || [];
+  return rolePermissions.includes(requiredPermission as any) || userPermissions.includes(requiredPermission);
+}
+
+export function getUserPermissions(role: UserRole, customPermissions: string[] = []): string[] {
+  const rolePermissions = ROLE_PERMISSIONS[role] || [];
+  return [...rolePermissions, ...customPermissions];
+}

@@ -5,21 +5,49 @@ import {
   insertCompanySchema,
   insertProfileSchema,
   insertVehicleSchema,
-  insertDriverSchema
+  insertDriverSchema,
+  getUserPermissions
 } from "@shared/schema";
+import { 
+  requireAuth, 
+  requirePermission, 
+  requireRole, 
+  requireCompanyAccess,
+  AuthenticatedRequest 
+} from "./middleware/auth";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Middleware to load user context for authenticated routes
+  app.use("/api", async (req: AuthenticatedRequest, res, next) => {
+    if (req.session?.userId) {
+      try {
+        const profile = await storage.getProfile(req.session.userId);
+        if (profile) {
+          req.user = {
+            id: profile.user_id,
+            email: profile.email,
+            role: profile.role as any,
+            permissions: profile.permissions || [],
+            companyId: profile.company_id
+          };
+        }
+      } catch (error) {
+        console.error("Error loading user context:", error);
+      }
+    }
+    next();
+  });
+
   // Authentication routes
   app.post("/api/auth/signin", async (req, res) => {
     try {
       const { email, password } = req.body;
       
-      // For now, we'll use a simplified auth system
-      // In production, you'd want proper password hashing and JWT tokens
-      const profile = await storage.getProfile(email); // Temporary: using email as user_id
+      // Find profile by email
+      const profile = await storage.getProfileByEmail(email);
       
-      if (!profile) {
-        return res.status(401).json({ error: "Invalid credentials" });
+      if (!profile || !profile.is_active) {
+        return res.status(401).json({ error: { message: "Invalid credentials" } });
       }
       
       // Set session
@@ -27,12 +55,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       req.session.companyId = profile.company_id;
       
       res.json({ 
-        user: { id: profile.user_id, email: profile.email },
-        profile 
+        data: {
+          user: { id: profile.user_id, email: profile.email },
+          profile: {
+            ...profile,
+            permissions: getUserPermissions(profile.role as any, profile.permissions || [])
+          }
+        }
       });
     } catch (error) {
       console.error("Sign in error:", error);
-      res.status(500).json({ error: "Internal server error" });
+      res.status(500).json({ error: { message: "Internal server error" } });
     }
   });
 
@@ -40,21 +73,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { email, password, userData } = req.body;
       
+      // Check if user already exists
+      const existingProfile = await storage.getProfileByEmail(email);
+      if (existingProfile) {
+        return res.status(400).json({ error: { message: "User already exists" } });
+      }
+      
       // Create company first
       const company = await storage.createCompany({
         name: userData.company_name,
         email: email
       });
       
-      // Create profile
+      // Create profile with proper role and permissions
       const userId = crypto.randomUUID();
+      const role = "admin"; // First user is always admin
+      const permissions = getUserPermissions(role);
+      
       const profile = await storage.createProfile({
         user_id: userId,
         company_id: company.id,
         email: email,
         first_name: userData.first_name,
         last_name: userData.last_name,
-        role: userData.role || 'admin'
+        phone: userData.phone || null,
+        role: role,
+        permissions: permissions,
+        is_active: true
       });
       
       // Set session
@@ -62,12 +107,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       req.session.companyId = company.id;
       
       res.json({ 
-        user: { id: userId, email },
-        profile 
+        data: {
+          user: { id: userId, email },
+          profile: {
+            ...profile,
+            permissions: permissions
+          }
+        }
       });
     } catch (error) {
       console.error("Sign up error:", error);
-      res.status(500).json({ error: "Internal server error" });
+      res.status(500).json({ error: { message: "Internal server error" } });
     }
   });
 
@@ -81,7 +131,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Company routes
-  app.get("/api/companies/:id", async (req, res) => {
+  app.get("/api/companies/:id", requireAuth, requirePermission("companies:read"), async (req: AuthenticatedRequest, res) => {
     try {
       const company = await storage.getCompany(req.params.id);
       if (!company) {
@@ -94,7 +144,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/companies/:id", async (req, res) => {
+  app.put("/api/companies/:id", requireAuth, requirePermission("companies:update"), async (req: AuthenticatedRequest, res) => {
     try {
       const validatedData = insertCompanySchema.partial().parse(req.body);
       const company = await storage.updateCompany(req.params.id, validatedData);
@@ -109,13 +159,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Vehicle routes
-  app.get("/api/vehicles", async (req, res) => {
+  app.get("/api/vehicles", requireAuth, requirePermission("vehicles:read"), async (req: AuthenticatedRequest, res) => {
     try {
-      const companyId = req.session.companyId;
-      if (!companyId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-      
+      const companyId = req.user!.companyId;
       const vehicles = await storage.getVehicles(companyId);
       res.json(vehicles);
     } catch (error) {
@@ -124,13 +170,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/vehicles", async (req, res) => {
+  app.post("/api/vehicles", requireAuth, requirePermission("vehicles:create"), async (req: AuthenticatedRequest, res) => {
     try {
-      const companyId = req.session.companyId;
-      if (!companyId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-      
+      const companyId = req.user!.companyId;
       const validatedData = insertVehicleSchema.parse({
         ...req.body,
         company_id: companyId
@@ -144,7 +186,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/vehicles/:id", async (req, res) => {
+  app.put("/api/vehicles/:id", requireAuth, requirePermission("vehicles:update"), async (req: AuthenticatedRequest, res) => {
     try {
       const validatedData = insertVehicleSchema.partial().parse(req.body);
       const vehicle = await storage.updateVehicle(req.params.id, validatedData);
@@ -158,7 +200,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/vehicles/:id", async (req, res) => {
+  app.delete("/api/vehicles/:id", requireAuth, requirePermission("vehicles:delete"), async (req: AuthenticatedRequest, res) => {
     try {
       const success = await storage.deleteVehicle(req.params.id);
       if (!success) {
@@ -171,13 +213,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/vehicles/status-counts", async (req, res) => {
+  app.get("/api/vehicles/status-counts", requireAuth, requirePermission("vehicles:read"), async (req: AuthenticatedRequest, res) => {
     try {
-      const companyId = req.session.companyId;
-      if (!companyId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-      
+      const companyId = req.user!.companyId;
       const counts = await storage.getVehicleStatusCounts(companyId);
       res.json(counts);
     } catch (error) {
@@ -186,14 +224,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Driver routes
-  app.get("/api/drivers", async (req, res) => {
+  // Profile route
+  app.get("/api/profile", requireAuth, async (req: AuthenticatedRequest, res) => {
     try {
-      const companyId = req.session.companyId;
-      if (!companyId) {
-        return res.status(401).json({ error: "Not authenticated" });
+      const profile = await storage.getProfile(req.session.userId!);
+      if (!profile) {
+        return res.status(404).json({ error: "Profile not found" });
       }
-      
+      res.json({
+        ...profile,
+        permissions: getUserPermissions(profile.role as any, profile.permissions || [])
+      });
+    } catch (error) {
+      console.error("Get profile error:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Driver routes
+  app.get("/api/drivers", requireAuth, requirePermission("drivers:read"), async (req: AuthenticatedRequest, res) => {
+    try {
+      const companyId = req.user!.companyId;
       const drivers = await storage.getDrivers(companyId);
       res.json(drivers);
     } catch (error) {
@@ -202,13 +253,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/drivers", async (req, res) => {
+  app.post("/api/drivers", requireAuth, requirePermission("drivers:create"), async (req: AuthenticatedRequest, res) => {
     try {
-      const companyId = req.session.companyId;
-      if (!companyId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-      
+      const companyId = req.user!.companyId;
       const validatedData = insertDriverSchema.parse({
         ...req.body,
         company_id: companyId
@@ -222,7 +269,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.put("/api/drivers/:id", async (req, res) => {
+  app.put("/api/drivers/:id", requireAuth, requirePermission("drivers:update"), async (req: AuthenticatedRequest, res) => {
     try {
       const validatedData = insertDriverSchema.partial().parse(req.body);
       const driver = await storage.updateDriver(req.params.id, validatedData);
@@ -236,7 +283,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete("/api/drivers/:id", async (req, res) => {
+  app.delete("/api/drivers/:id", requireAuth, requirePermission("drivers:delete"), async (req: AuthenticatedRequest, res) => {
     try {
       const success = await storage.deleteDriver(req.params.id);
       if (!success) {
@@ -249,13 +296,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/drivers/status/:status", async (req, res) => {
+  app.get("/api/drivers/status/:status", requireAuth, requirePermission("drivers:read"), async (req: AuthenticatedRequest, res) => {
     try {
-      const companyId = req.session.companyId;
-      if (!companyId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-      
+      const companyId = req.user!.companyId;
       const drivers = await storage.getDriversByStatus(companyId, req.params.status);
       res.json(drivers);
     } catch (error) {

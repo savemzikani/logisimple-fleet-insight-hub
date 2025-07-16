@@ -31,6 +31,7 @@ export interface IStorage {
   
   // Profile methods
   getProfile(userId: string): Promise<Profile | undefined>;
+  getProfileByEmail(email: string): Promise<Profile | undefined>;
   getProfilesByCompany(companyId: string): Promise<Profile[]>;
   createProfile(profile: InsertProfile): Promise<Profile>;
   updateProfile(userId: string, profile: Partial<InsertProfile>): Promise<Profile | undefined>;
@@ -91,6 +92,11 @@ export class DatabaseStorage implements IStorage {
   // Profile methods
   async getProfile(userId: string): Promise<Profile | undefined> {
     const result = await db.select().from(profiles).where(eq(profiles.user_id, userId));
+    return result[0];
+  }
+
+  async getProfileByEmail(email: string): Promise<Profile | undefined> {
+    const result = await db.select().from(profiles).where(eq(profiles.email, email));
     return result[0];
   }
 
