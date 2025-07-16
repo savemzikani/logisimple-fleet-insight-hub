@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { driverService } from '@/lib/api';
-import { Driver } from '@/types';
+import { Driver } from '@/lib/types';
 import { useAuth } from '@/contexts/AuthContext';
 
 export const useDrivers = (filters: Record<string, any> = {}) => {
@@ -13,7 +13,7 @@ export const useDrivers = (filters: Record<string, any> = {}) => {
     isLoading,
     error,
     refetch,
-  } = useQuery<Driver[]>({
+  } = useQuery<any[]>({
     queryKey: ['drivers', profile?.company_id, filters],
     queryFn: async () => {
       if (!profile?.company_id) return [];
@@ -31,7 +31,7 @@ export const useDrivers = (filters: Record<string, any> = {}) => {
 
   // Create a new driver
   const createDriver = useMutation({
-    mutationFn: async (driverData: Omit<Driver, 'id' | 'created_at' | 'updated_at'>) => {
+    mutationFn: async (driverData: any) => {
       const { data, error } = await driverService.create(driverData);
       if (error) throw error;
       return data;
@@ -43,7 +43,7 @@ export const useDrivers = (filters: Record<string, any> = {}) => {
 
   // Update an existing driver
   const updateDriver = useMutation({
-    mutationFn: async ({ id, ...updates }: Partial<Driver> & { id: string }) => {
+    mutationFn: async ({ id, ...updates }: any & { id: string }) => {
       const { data, error } = await driverService.update(id, updates);
       if (error) throw error;
       return data;

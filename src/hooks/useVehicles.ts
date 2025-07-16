@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { vehicleService } from '@/lib/api';
-import { Vehicle } from '@/types';
+import { Vehicle } from '@/lib/types';
 import { useAuth } from '@/contexts/AuthContext';
 
 export const useVehicles = (filters: Record<string, any> = {}) => {
@@ -13,7 +13,7 @@ export const useVehicles = (filters: Record<string, any> = {}) => {
     isLoading,
     error,
     refetch,
-  } = useQuery<Vehicle[]>({
+  } = useQuery<any[]>({
     queryKey: ['vehicles', profile?.company_id, filters],
     queryFn: async () => {
       if (!profile?.company_id) return [];
@@ -31,7 +31,7 @@ export const useVehicles = (filters: Record<string, any> = {}) => {
 
   // Create a new vehicle
   const createVehicle = useMutation({
-    mutationFn: async (vehicleData: Omit<Vehicle, 'id' | 'created_at' | 'updated_at'>) => {
+    mutationFn: async (vehicleData: any) => {
       const { data, error } = await vehicleService.create(vehicleData);
       if (error) throw error;
       return data;
@@ -43,7 +43,7 @@ export const useVehicles = (filters: Record<string, any> = {}) => {
 
   // Update an existing vehicle
   const updateVehicle = useMutation({
-    mutationFn: async ({ id, ...updates }: Partial<Vehicle> & { id: string }) => {
+    mutationFn: async ({ id, ...updates }: any & { id: string }) => {
       const { data, error } = await vehicleService.update(id, updates);
       if (error) throw error;
       return data;

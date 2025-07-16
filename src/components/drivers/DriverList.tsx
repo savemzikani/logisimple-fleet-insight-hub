@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, Search, Filter, Loader2, User, Phone, Mail, AlertCircle, CheckCircle2, XCircle, Clock } from 'lucide-react';
-import { Driver, DriverStatus } from '@/types';
+import { Driver, DriverStatus } from '@/lib/types';
 
 const statusVariant: Record<DriverStatus, 'default' | 'destructive' | 'outline' | 'secondary' | 'success'> = {
   active: 'success',
@@ -41,26 +41,21 @@ export function DriverList({ onSelectDriver, selectedDriverId, showActions = tru
   
   const {
     drivers,
-    loading,
-    pagination,
-    filters,
-    applyFilters,
-    loadNextPage,
-    loadDrivers,
-    deleteDriver: deleteDriverHandler,
-  } = useDriverManagement({
-    status: 'active',
-    pageSize: 10,
-  });
+    isLoading,
+    error,
+    refetch,
+    deleteDriver,
+  } = useDriverManagement();
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-    applyFilters({ search: e.target.value });
+    setSearchTerm(e.target.value);
   };
 
   const handleStatusFilter = (status: string) => {
-    applyFilters({ 
-      status: status === 'all' ? undefined : status as DriverStatus 
-    });
+    setStatusFilter(status);
   };
 
   const handleEdit = (driver: Driver) => {
@@ -70,20 +65,21 @@ export function DriverList({ onSelectDriver, selectedDriverId, showActions = tru
 
   const handleDelete = async (driverId: string) => {
     if (window.confirm('Are you sure you want to delete this driver? This action cannot be undone.')) {
-      const success = await deleteDriverHandler(driverId);
-      if (success) {
-        toast({
-          title: 'Success',
-          description: 'Driver deleted successfully.',
-        });
-      }
+      deleteDriver.mutate(driverId, {
+        onSuccess: () => {
+          toast({
+            title: 'Success',
+            description: 'Driver deleted successfully.',
+          });
+        }
+      });
     }
   };
 
   const handleFormSuccess = () => {
     setIsFormOpen(false);
     setEditingDriver(null);
-    loadDrivers(1, true);
+    refetch();
   };
 
   const formatDate = (dateString: string | undefined) => {
@@ -130,7 +126,7 @@ export function DriverList({ onSelectDriver, selectedDriverId, showActions = tru
                   type="search"
                   placeholder="Search drivers..."
                   className="w-full pl-8 sm:w-[300px]"
-                  value={filters.search || ''}
+                  value={searchTerm}
                   onChange={handleSearch}
                 />
               </div>
@@ -138,7 +134,7 @@ export function DriverList({ onSelectDriver, selectedDriverId, showActions = tru
             <div className="flex items-center gap-2 w-full sm:w-auto">
               <Filter className="h-4 w-4 text-muted-foreground hidden sm:block" />
               <Select
-                value={filters.status || 'all'}
+                value={statusFilter}
                 onValueChange={handleStatusFilter}
               >
                 <SelectTrigger className="w-full sm:w-[180px]">
@@ -170,7 +166,7 @@ export function DriverList({ onSelectDriver, selectedDriverId, showActions = tru
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {loading && drivers.length === 0 ? (
+                {isLoading ? (
                   <TableRow>
                     <TableCell colSpan={showActions ? 6 : 5} className="h-24 text-center">
                       <div className="flex items-center justify-center">
@@ -179,14 +175,14 @@ export function DriverList({ onSelectDriver, selectedDriverId, showActions = tru
                       </div>
                     </TableCell>
                   </TableRow>
-                ) : drivers.length === 0 ? (
+                ) : !drivers || (Array.isArray(drivers) && drivers.length === 0) ? (
                   <TableRow>
                     <TableCell colSpan={showActions ? 6 : 5} className="h-24 text-center">
                       No drivers found.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  drivers.map((driver) => (
+                  Array.isArray(drivers) && drivers.map((driver) => (
                     <TableRow 
                       key={driver.id} 
                       className={selectedDriverId === driver.id ? 'bg-muted/50' : ''}
@@ -213,19 +209,18 @@ export function DriverList({ onSelectDriver, selectedDriverId, showActions = tru
                         <div className="text-sm">
                           <div className="font-medium">{driver.license_number || 'N/A'}</div>
                           <div className="text-xs text-muted-foreground">
-                            {driver.license_class ? `Class ${driver.license_class}` : ''}
-                            {driver.license_expiry && ` • Exp ${formatDate(driver.license_expiry)}`}
+                            {driver.license_expiry && `Exp ${formatDate(driver.license_expiry)}`}
                           </div>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant={statusVariant[driver.status as DriverStatus] || 'outline'}>
-                          {statusIcon[driver.status as DriverStatus]}
-                          {driver.status ? driver.status.replace('-', ' ') : 'Active'}
+                        <Badge variant={driver.is_active ? 'success' : 'outline'}>
+                          {driver.is_active ? <CheckCircle2 className="h-4 w-4 mr-1" /> : <XCircle className="h-4 w-4 mr-1" />}
+                          {driver.is_active ? 'Active' : 'Inactive'}
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        {driver.hire_date ? formatDate(driver.hire_date) : 'N/A'}
+                        {driver.created_at ? formatDate(driver.created_at) : 'N/A'}
                       </TableCell>
                       {showActions && (
                         <TableCell className="text-right">
@@ -261,24 +256,6 @@ export function DriverList({ onSelectDriver, selectedDriverId, showActions = tru
             </Table>
           </div>
           
-          {pagination.hasMore && (
-            <div className="mt-4 flex justify-center">
-              <Button 
-                variant="outline" 
-                onClick={() => loadNextPage()}
-                disabled={loading}
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Loading...
-                  </>
-                ) : (
-                  'Load More'
-                )}
-              </Button>
-            </div>
-          )}
         </CardContent>
       </Card>
 

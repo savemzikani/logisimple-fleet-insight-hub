@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { companyService } from '@/lib/api';
-import { Company } from '@/types';
+import { Company } from '@/lib/types';
 import { useAuth } from '@/contexts/AuthContext';
 
 export const useCompany = () => {
@@ -25,14 +25,14 @@ export const useCompany = () => {
     enabled: !!profile?.company_id,
   });
 
-  // Update company settings
-  const updateCompanySettings = useMutation({
-    mutationFn: async (settings: Partial<Company['settings']>) => {
+  // Update company 
+  const updateCompany = useMutation({
+    mutationFn: async (updates: Partial<Company>) => {
       if (!profile?.company_id) throw new Error('No company ID found');
       
-      const { data, error } = await companyService.updateCompanySettings(
+      const { data, error } = await companyService.update(
         profile.company_id, 
-        settings
+        updates
       );
       
       if (error) throw error;
@@ -43,25 +43,11 @@ export const useCompany = () => {
     },
   });
 
-  // Get company stats
-  const { data: stats } = useQuery({
-    queryKey: ['companyStats', profile?.company_id],
-    queryFn: async () => {
-      if (!profile?.company_id) return null;
-      
-      const { data, error } = await companyService.getCompanyStats(profile.company_id);
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!profile?.company_id,
-  });
-
   return {
     company,
-    stats,
     isLoading,
     error,
     refetch,
-    updateCompanySettings,
+    updateCompany,
   };
 };

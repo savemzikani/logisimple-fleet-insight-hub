@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { useToast } from '@/hooks/use-toast';
 import { useVehicleManagement } from '@/hooks/useVehicleManagement';
-import { Vehicle, VehicleStatus, VehicleType } from '@/types';
+import { Vehicle, VehicleStatus } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -14,19 +14,17 @@ import { VehicleForm } from './VehicleForm';
 import { format } from 'date-fns';
 
 const statusVariant: Record<VehicleStatus, 'default' | 'destructive' | 'outline' | 'secondary' | 'success'> = {
-  active: 'success',
+  available: 'success',
+  'in-use': 'default',
   maintenance: 'destructive',
-  inactive: 'outline',
-  'in-route': 'default',
-  'needs-service': 'destructive',
+  'out-of-service': 'destructive',
 };
 
 const statusIcon: Record<VehicleStatus, React.ReactNode> = {
-  active: <CheckCircle2 className="h-4 w-4 mr-1" />,
+  available: <CheckCircle2 className="h-4 w-4 mr-1" />,
+  'in-use': <Truck className="h-4 w-4 mr-1" />,
   maintenance: <Wrench className="h-4 w-4 mr-1" />,
-  inactive: <XCircle className="h-4 w-4 mr-1" />,
-  'in-route': <Truck className="h-4 w-4 mr-1" />,
-  'needs-service': <AlertCircle className="h-4 w-4 mr-1" />,
+  'out-of-service': <XCircle className="h-4 w-4 mr-1" />,
 };
 
 interface VehicleListProps {
@@ -44,27 +42,21 @@ export function VehicleList({ onSelectVehicle, selectedVehicleId, showActions = 
   
   const {
     vehicles,
-    loading,
-    pagination,
-    filters,
-    applyFilters,
-    loadNextPage,
-    loadVehicles,
-    deleteVehicle: deleteVehicleHandler,
-  } = useVehicleManagement({
-    companyId: companyId || '',
-    initialStatus: 'active',
-    pageSize: 10,
-  });
+    isLoading,
+    error,
+    refetch,
+    deleteVehicle,
+  } = useVehicleManagement();
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-    applyFilters({ search: e.target.value });
+    setSearchTerm(e.target.value);
   };
 
   const handleStatusFilter = (status: string) => {
-    applyFilters({ 
-      status: status === 'all' ? undefined : status as VehicleStatus 
-    });
+    setStatusFilter(status);
   };
 
   const handleEdit = (vehicle: Vehicle) => {
@@ -74,20 +66,21 @@ export function VehicleList({ onSelectVehicle, selectedVehicleId, showActions = 
 
   const handleDelete = async (vehicleId: string) => {
     if (window.confirm('Are you sure you want to delete this vehicle? This action cannot be undone.')) {
-      const success = await deleteVehicleHandler(vehicleId);
-      if (success) {
-        toast({
-          title: 'Success',
-          description: 'Vehicle deleted successfully.',
-        });
-      }
+      deleteVehicle.mutate(vehicleId, {
+        onSuccess: () => {
+          toast({
+            title: 'Success',
+            description: 'Vehicle deleted successfully.',
+          });
+        }
+      });
     }
   };
 
   const handleFormSuccess = () => {
     setIsFormOpen(false);
     setEditingVehicle(null);
-    loadVehicles(1, true);
+    refetch();
   };
 
   if (!companyId) {
@@ -125,28 +118,27 @@ export function VehicleList({ onSelectVehicle, selectedVehicleId, showActions = 
                   type="search"
                   placeholder="Search vehicles..."
                   className="w-full pl-8 sm:w-[300px]"
-                  value={filters.search}
+                  value={searchTerm}
                   onChange={handleSearch}
                 />
               </div>
             </div>
             <div className="flex items-center gap-2 w-full sm:w-auto">
               <Filter className="h-4 w-4 text-muted-foreground hidden sm:block" />
-              <Select
-                value={filters.status || 'all'}
-                onValueChange={handleStatusFilter}
-              >
+                <Select
+                  value={statusFilter}
+                  onValueChange={handleStatusFilter}
+                >
                 <SelectTrigger className="w-full sm:w-[180px]">
                   <SelectValue placeholder="Filter by status" />
                 </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="active">Active</SelectItem>
-                  <SelectItem value="inactive">Inactive</SelectItem>
-                  <SelectItem value="in-route">In Route</SelectItem>
-                  <SelectItem value="maintenance">In Maintenance</SelectItem>
-                  <SelectItem value="needs-service">Needs Service</SelectItem>
-                </SelectContent>
+                  <SelectContent>
+                    <SelectItem value="all">All Statuses</SelectItem>
+                    <SelectItem value="available">Available</SelectItem>
+                    <SelectItem value="in-use">In Use</SelectItem>
+                    <SelectItem value="maintenance">Maintenance</SelectItem>
+                    <SelectItem value="out-of-service">Out of Service</SelectItem>
+                  </SelectContent>
               </Select>
             </div>
           </div>
@@ -166,7 +158,7 @@ export function VehicleList({ onSelectVehicle, selectedVehicleId, showActions = 
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {loading && vehicles.length === 0 ? (
+                {isLoading ? (
                   <TableRow>
                     <TableCell colSpan={showActions ? 7 : 6} className="h-24 text-center">
                       <div className="flex items-center justify-center">
@@ -175,14 +167,14 @@ export function VehicleList({ onSelectVehicle, selectedVehicleId, showActions = 
                       </div>
                     </TableCell>
                   </TableRow>
-                ) : vehicles.length === 0 ? (
+                ) : !vehicles || (Array.isArray(vehicles) && vehicles.length === 0) ? (
                   <TableRow>
                     <TableCell colSpan={showActions ? 7 : 6} className="h-24 text-center">
                       No vehicles found.
                     </TableCell>
                   </TableRow>
                 ) : (
-                  vehicles.map((vehicle) => (
+                  Array.isArray(vehicles) && vehicles.map((vehicle) => (
                     <TableRow 
                       key={vehicle.id} 
                       className={selectedVehicleId === vehicle.id ? 'bg-muted/50' : ''}
@@ -193,7 +185,7 @@ export function VehicleList({ onSelectVehicle, selectedVehicleId, showActions = 
                           <Truck className="mr-2 h-5 w-5 text-muted-foreground" />
                           <div>
                             <div className="font-medium">{vehicle.make} {vehicle.model}</div>
-                            <div className="text-sm text-muted-foreground">{vehicle.vehicle_type}</div>
+                            <div className="text-sm text-muted-foreground">Vehicle</div>
                           </div>
                         </div>
                       </TableCell>
@@ -247,39 +239,18 @@ export function VehicleList({ onSelectVehicle, selectedVehicleId, showActions = 
             </Table>
           </div>
           
-          {pagination.hasMore && (
-            <div className="mt-4 flex justify-center">
-              <Button 
-                variant="outline" 
-                onClick={() => loadNextPage()}
-                disabled={loading}
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Loading...
-                  </>
-                ) : (
-                  'Load More'
-                )}
-              </Button>
-            </div>
-          )}
         </CardContent>
       </Card>
 
-      <VehicleForm
-        open={isFormOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            setIsFormOpen(false);
-            setEditingVehicle(null);
-          }
-        }}
-        companyId={companyId}
-        vehicle={editingVehicle}
-        onSuccess={handleFormSuccess}
-      />
+      {isFormOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <VehicleForm
+            vehicle={editingVehicle}
+            onSubmit={handleFormSuccess}
+            onCancel={() => setIsFormOpen(false)}
+          />
+        </div>
+      )}
     </div>
   );
 }
