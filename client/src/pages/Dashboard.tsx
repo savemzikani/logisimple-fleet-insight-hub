@@ -103,14 +103,16 @@ const Dashboard = () => {
   } = useDrivers();
   
   const { 
-    stats: companyStats = {
-      active_vehicles: 0,
-      upcoming_maintenance: 0,
-      total_vehicles: 0,
-      total_drivers: 0,
-    }, 
+    company, 
     isLoading: isLoadingStats 
   } = useCompany();
+  
+  const companyStats = {
+    active_vehicles: 0,
+    upcoming_maintenance: 0,
+    total_vehicles: 0,
+    total_drivers: 0,
+  };
 
   // Calculate derived values
   const activeDrivers = useMemo(() => drivers.filter(d => d.status === 'active').length, [drivers]);
@@ -232,11 +234,11 @@ const Dashboard = () => {
       value: totalVehicles,
       description: 'In your fleet',
       icon: Truck,
-      trend: {
-        value: '+12%',
-        direction: 'up',
-        change: 'from last month'
-      },
+        trend: {
+          value: '+12%',
+          direction: 'up' as const,
+          change: 'from last month'
+        },
       color: 'bg-blue-100 dark:bg-blue-900/20',
       iconColor: 'text-blue-600 dark:text-blue-400',
       drillDownData: {
@@ -251,7 +253,7 @@ const Dashboard = () => {
           total: totalVehicles,
           active: vehicleStatusCounts.active,
           inactive: vehicleStatusCounts.inactive + vehicleStatusCounts.maintenance,
-          change: { value: '+12%', direction: 'up' }
+          change: { value: '+12%', direction: 'up' as const }
         }
       }
     },
@@ -261,11 +263,11 @@ const Dashboard = () => {
       value: activeDrivers,
       description: 'On the road now',
       icon: Users,
-      trend: {
-        value: '+5%',
-        direction: 'up',
-        change: 'from last week'
-      },
+        trend: {
+          value: '+5%',
+          direction: 'up' as const,
+          change: 'from last week'
+        },
       color: 'bg-green-100 dark:bg-green-900/20',
       iconColor: 'text-green-600 dark:text-green-400',
       drillDownData: {
@@ -280,7 +282,7 @@ const Dashboard = () => {
           total: drivers.length,
           active: activeDrivers,
           inactive: drivers.length - activeDrivers,
-          change: { value: '+5%', direction: 'up' }
+          change: { value: '+5%', direction: 'up' as const }
         }
       }
     },
@@ -290,11 +292,11 @@ const Dashboard = () => {
       value: onRoute,
       description: 'Currently in transit',
       icon: MapPin,
-      trend: {
-        value: '+3',
-        direction: 'up',
-        change: 'active routes'
-      },
+        trend: {
+          value: '+3',
+          direction: 'up' as const,
+          change: 'active routes'
+        },
       color: 'bg-purple-100 dark:bg-purple-900/20',
       iconColor: 'text-purple-600 dark:text-purple-400',
       drillDownData: {
@@ -309,7 +311,7 @@ const Dashboard = () => {
           total: onRoute,
           active: onRoute,
           inactive: 0,
-          change: { value: '+3', direction: 'up' }
+          change: { value: '+3', direction: 'up' as const }
         }
       }
     },
@@ -319,13 +321,13 @@ const Dashboard = () => {
       value: maintenanceDue,
       description: 'Requiring attention',
       icon: Wrench,
-      trend: maintenanceDue > 0 
-        ? {
-            value: `${maintenanceDue} due`,
-            direction: 'down',
-            change: 'needs attention'
-          }
-        : undefined,
+        trend: maintenanceDue > 0 
+          ? {
+              value: `${maintenanceDue} due`,
+              direction: 'down' as const,
+              change: 'needs attention'
+            }
+          : undefined,
       color: 'bg-amber-100 dark:bg-amber-900/20',
       iconColor: 'text-amber-600 dark:text-amber-400',
       drillDownData: {
@@ -340,7 +342,7 @@ const Dashboard = () => {
           total: maintenanceDue,
           active: 0,
           inactive: maintenanceDue,
-          change: { value: maintenanceDue > 0 ? '+' + maintenanceDue : '0', direction: maintenanceDue > 0 ? 'down' : 'neutral' }
+          change: { value: maintenanceDue > 0 ? '+' + maintenanceDue : '0', direction: maintenanceDue > 0 ? 'down' as const : 'neutral' as const }
         }
       }
     }

@@ -38,7 +38,7 @@ export function VehicleList({ onSelectVehicle, selectedVehicleId, showActions = 
   const { companyId } = useParams<{ companyId: string }>();
   const { toast } = useToast();
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [editingVehicle, setEditingVehicle] = useState<Vehicle | null>(null);
+  const [editingVehicle, setEditingVehicle] = useState<Vehicle | undefined>(undefined);
   
   const {
     vehicles,
@@ -79,7 +79,7 @@ export function VehicleList({ onSelectVehicle, selectedVehicleId, showActions = 
 
   const handleFormSuccess = () => {
     setIsFormOpen(false);
-    setEditingVehicle(null);
+    setEditingVehicle(undefined);
     refetch();
   };
 
@@ -101,7 +101,7 @@ export function VehicleList({ onSelectVehicle, selectedVehicleId, showActions = 
           </p>
         </div>
         <Button onClick={() => {
-          setEditingVehicle(null);
+          setEditingVehicle(undefined);
           setIsFormOpen(true);
         }}>
           <Plus className="mr-2 h-4 w-4" /> Add Vehicle
@@ -245,7 +245,7 @@ export function VehicleList({ onSelectVehicle, selectedVehicleId, showActions = 
       {isFormOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <VehicleForm
-            vehicle={editingVehicle}
+            vehicle={editingVehicle || undefined}
             onSubmit={handleFormSuccess}
             onCancel={() => setIsFormOpen(false)}
           />

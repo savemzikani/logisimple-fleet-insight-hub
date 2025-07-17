@@ -293,7 +293,7 @@ export function AppSidebar() {
             {/* User Profile */}
             <div className="flex items-center p-2 hover:bg-accent rounded-md transition-colors">
               <Avatar className="h-8 w-8">
-                <AvatarImage src={profile?.avatar_url} alt={profile?.first_name} />
+                <AvatarImage src={profile?.avatar_url || undefined} alt={profile?.first_name} />
                 <AvatarFallback>
                   {profile?.first_name?.[0]}{profile?.last_name?.[0]}
                 </AvatarFallback>

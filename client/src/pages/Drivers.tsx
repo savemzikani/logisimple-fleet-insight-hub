@@ -18,14 +18,18 @@ import { displayError } from "@/lib/utils/form-errors";
 
 interface Driver {
   id: string;
-  employee_id: string;
-  personal_info: any;
-  license_info: any;
-  certifications: any;
-  emergency_contacts: any;
-  performance_metrics: any;
-  status: string;
+  company_id: string;
+  first_name: string;
+  last_name: string;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  license_number: string | null;
+  license_expiry: string | null;
+  is_active: boolean | null;
+  user_id: string | null;
   created_at: string;
+  updated_at: string;
 }
 
 const Drivers = () => {
@@ -69,7 +73,7 @@ const Drivers = () => {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setDrivers(data as Driver[] || []);
+      setDrivers(data || []);
     } catch (error: any) {
       toast({
         title: "Error",
@@ -105,7 +109,16 @@ const Drivers = () => {
       if (editingDriver) {
         const { error } = await supabase
           .from('drivers')
-          .update(driverData)
+          .update({
+            first_name: driverData.personal_info.first_name,
+            last_name: driverData.personal_info.last_name,
+            email: driverData.personal_info.email,
+            phone: driverData.personal_info.phone,
+            address: driverData.personal_info.address,
+            license_number: driverData.license_info.number,
+            license_expiry: driverData.license_info.expiry,
+            is_active: driverData.status === 'active'
+          })
           .eq('id', editingDriver.id);
 
         if (error) throw error;
@@ -118,14 +131,26 @@ const Drivers = () => {
         const { data: profile, error: profileError } = await supabase
           .from('profiles')
           .select('company_id')
-          .eq('user_id', (await supabase.auth.getUser()).data.user?.id)
+          .eq('user_id', (await supabase.auth.getUser()).data.user!.id)
           .single();
 
         if (profileError) throw profileError;
 
+        const newDriver = {
+          company_id: profile.company_id,
+          first_name: driverData.personal_info.first_name,
+          last_name: driverData.personal_info.last_name,
+          email: driverData.personal_info.email,
+          phone: driverData.personal_info.phone,
+          address: driverData.personal_info.address,
+          license_number: driverData.license_info.number,
+          license_expiry: driverData.license_info.expiry,
+          is_active: driverData.status === 'active'
+        };
+        
         const { error } = await supabase
           .from('drivers')
-          .insert([{ ...driverData, company_id: profile.company_id }]);
+          .insert([newDriver]);
 
         if (error) throw error;
 
@@ -151,7 +176,7 @@ const Drivers = () => {
       const { error } = await supabase
         .from('drivers')
         .delete()
-        .eq('id', deleteDriverId);
+        .eq('id', deleteDriverId!);
 
       if (error) throw error;
 
@@ -183,13 +208,12 @@ const Drivers = () => {
   };
 
   const filteredDrivers = drivers.filter(driver => {
-    const fullName = `${driver.personal_info?.first_name || ''} ${driver.personal_info?.last_name || ''}`.toLowerCase();
+    const fullName = `${driver.first_name || ''} ${driver.last_name || ''}`.toLowerCase();
     const matchesSearch = 
       fullName.includes(searchTerm.toLowerCase()) ||
-      driver.employee_id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (driver.personal_info?.email || '').toLowerCase().includes(searchTerm.toLowerCase());
+      (driver.email || '').toLowerCase().includes(searchTerm.toLowerCase());
     
-    const matchesStatus = statusFilter === 'all' || driver.status === statusFilter;
+    const matchesStatus = statusFilter === 'all' || (driver.is_active ? 'active' : 'inactive') === statusFilter;
     
     return matchesSearch && matchesStatus;
   });
@@ -216,17 +240,17 @@ const Drivers = () => {
     setIsDialogOpen(true);
     setEditingDriver(driver);
     form.reset({
-      employee_id: driver.employee_id,
-      first_name: driver.personal_info?.first_name || "",
-      last_name: driver.personal_info?.last_name || "",
-      email: driver.personal_info?.email || "",
-      phone: driver.personal_info?.phone || "",
-      address: driver.personal_info?.address || "",
-      license_number: driver.license_info?.number || "",
-      license_class: driver.license_info?.class || "CDL-A",
-      license_expiry: driver.license_info?.expiry || "",
-      hire_date: driver.personal_info?.hire_date || "",
-      status: driver.status
+      employee_id: driver.id,
+      first_name: driver.first_name || "",
+      last_name: driver.last_name || "",
+      email: driver.email || "",
+      phone: driver.phone || "",
+      address: driver.address || "",
+      license_number: driver.license_number || "",
+      license_class: "CDL-A",
+      license_expiry: driver.license_expiry || "",
+      hire_date: driver.created_at,
+      status: driver.is_active ? "active" : "inactive"
     });
   };
 
@@ -518,15 +542,15 @@ const Drivers = () => {
                   </div>
                   <div>
                     <CardTitle className="text-lg">
-                      {driver.personal_info?.first_name} {driver.personal_info?.last_name}
+                      {driver.first_name} {driver.last_name}
                     </CardTitle>
                     <CardDescription>
-                      ID: {driver.employee_id}
+                      ID: {driver.id}
                     </CardDescription>
                   </div>
                 </div>
-                <Badge className={getStatusColor(driver.status)}>
-                  {driver.status}
+                <Badge className={getStatusColor(driver.is_active ? 'active' : 'inactive')}>
+                  {driver.is_active ? 'active' : 'inactive'}
                 </Badge>
                 <div className="flex items-center gap-2">
                   <Button 
@@ -550,20 +574,20 @@ const Drivers = () => {
               <div className="space-y-2 text-sm">
                 <div className="flex items-center gap-2">
                   <Mail className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm truncate">{driver.personal_info?.email}</span>
+                  <span className="text-sm truncate">{driver.email}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Phone className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm">{driver.personal_info?.phone}</span>
+                  <span className="text-sm">{driver.phone}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Award className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm">{driver.license_info?.class}</span>
+                  <span className="text-sm">CDL-A</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Calendar className="w-4 h-4 text-muted-foreground" />
                   <span className="text-sm">
-                    Hired: {driver.personal_info?.hire_date ? new Date(driver.personal_info.hire_date).toLocaleDateString() : 'N/A'}
+                    Hired: {driver.created_at ? new Date(driver.created_at).toLocaleDateString() : 'N/A'}
                   </span>
                 </div>
               </div>
@@ -572,19 +596,19 @@ const Drivers = () => {
                 <div className="grid grid-cols-3 gap-2 text-center">
                   <div>
                     <div className="text-lg font-bold text-primary">
-                      {driver.performance_metrics?.total_trips || 0}
+                      0
                     </div>
                     <div className="text-xs text-muted-foreground">Trips</div>
                   </div>
                   <div>
                     <div className="text-lg font-bold text-primary">
-                      {driver.performance_metrics?.safety_score || 100}
+                      100
                     </div>
                     <div className="text-xs text-muted-foreground">Safety</div>
                   </div>
                   <div>
                     <div className="text-lg font-bold text-primary">
-                      {Math.round(driver.performance_metrics?.miles_driven || 0)}
+                      0
                     </div>
                     <div className="text-xs text-muted-foreground">Miles</div>
                   </div>

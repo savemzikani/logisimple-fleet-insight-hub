@@ -80,7 +80,7 @@ export const VehicleForm: React.FC<VehicleFormProps> = ({
           <div>
             <Label htmlFor="status">Status</Label>
             <Select
-              value={watch('status')}
+              value={watch('status') || "available"}
               onValueChange={(value) => setValue('status', value)}
             >
               <SelectTrigger>
