@@ -69,7 +69,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setProfile(data.profile);
         return { error: null };
       }
-      return { error: error.message || 'Failed to sign in' };
+      return { error: error?.message || 'Failed to sign in' };
     } catch (error: any) {
       console.error('Error in signIn:', error);
       return { error: error.message || 'Failed to sign in' };
@@ -84,7 +84,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setProfile(data.profile);
         return { error: null };
       }
-      return { error: error.message || 'Failed to sign up' };
+      return { error: error?.message || 'Failed to sign up' };
     } catch (error: any) {
       console.error('Error in signUp:', error);
       return { error: error.message || 'Failed to sign up' };

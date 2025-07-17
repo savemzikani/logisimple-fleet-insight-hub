@@ -73,7 +73,7 @@ const Vehicles = () => {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setVehicles(data || []);
+      setVehicles(data as Vehicle[] || []);
     } catch (error: any) {
       toast({
         title: "Error",

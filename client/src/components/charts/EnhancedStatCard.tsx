@@ -99,10 +99,12 @@ export function EnhancedStatCard({
                 <span className="font-medium">Trend Analysis</span>
               </div>
               <div className="flex items-center space-x-2">
-                <TrendIcon className={cn(
-                  "h-4 w-4",
-                  drillDownData.metrics.change.direction === 'up' ? 'text-green-500' : 'text-amber-500'
-                )} />
+                {TrendIcon && (
+                  <TrendIcon className={cn(
+                    "h-4 w-4",
+                    drillDownData.metrics.change.direction === 'up' ? 'text-green-500' : 'text-amber-500'
+                  )} />
+                )}
                 <span className={cn(
                   "text-sm font-medium",
                   drillDownData.metrics.change.direction === 'up' ? 'text-green-600' : 'text-amber-600'

@@ -69,7 +69,7 @@ const Drivers = () => {
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setDrivers(data || []);
+      setDrivers(data as Driver[] || []);
     } catch (error: any) {
       toast({
         title: "Error",
